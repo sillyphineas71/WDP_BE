@@ -2,6 +2,8 @@ import express from "express";
 import "dotenv/config";
 import sequelize from "./src/config/database.js";
 import { initModels } from "./src/models/index.js";
+import authRoutes from "./src/routes/authRoutes.js";
+import { errorHandler } from "./src/middleware/errorHandler.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,10 +37,13 @@ async function initializeDatabase() {
     await sequelize.authenticate();
     console.log("✓ Database connection established");
   } catch (error) {
-    console.error("✗ Database connection failed:", error);
-    process.exit(1);
+    console.error("✗ Database connection failed:", error.message);
+    console.warn("⚠️  Server will start without database connection");
   }
 }
+
+// Routes
+app.use("/api/auth", authRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {
@@ -55,16 +60,7 @@ app.use((req, res) => {
 });
 
 // Error handling middleware
-app.use((err, req, res, next) => {
-  console.error("Error:", err);
-  res.status(err.status || 500).json({
-    success: false,
-    error: {
-      message: err.message || "Internal Server Error",
-      status: err.status || 500,
-    },
-  });
-});
+app.use(errorHandler);
 
 // Initialize and start server
 async function startServer() {

@@ -2,10 +2,10 @@
   "name": "wdp_be",
   "version": "1.0.0",
   "description": "Smart Edu LMS Backend API",
-  "main": "src/index.js",
+  "main": "index.js",
   "scripts": {
-    "dev": "node src/index.js",
-    "start": "node src/index.js",
+    "dev": "node index.js",
+    "start": "node index.js",
     "test": "jest"
   },
   "keywords": [],
@@ -19,7 +19,7 @@
     "uuid": "^9.0.1",
     "dotenv": "^16.3.1",
     "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.1.2",
+    "jsonwebtoken": "^9.0.0",
     "joi": "^17.11.0"
   },
   "devDependencies": {
