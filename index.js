@@ -45,7 +45,7 @@ async function initializeDatabase() {
 
 // Routes
 app.use("/api/auth", authRoutes);
-app.use("/api/admin", adminCollectiveRoutes);
+app.use("/api/v1/admin", adminCollectiveRoutes);
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "Smart Edu LMS API is running" });
