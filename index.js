@@ -4,6 +4,7 @@ import sequelize from "./src/config/database.js";
 import { initModels } from "./src/models/index.js";
 import authRoutes from "./src/routes/authRoutes.js";
 import adminCollectiveRoutes from "./src/routes/adminCollectiveRoutes.js";
+import adminRoutes from "./src/routes/adminRoutes.js";
 import { errorHandler } from "./src/middleware/errorHandler.js";
 
 const app = express();
@@ -36,6 +37,7 @@ async function initializeDatabase() {
   try {
     initModels(sequelize);
     await sequelize.authenticate();
+    await sequelize.sync({ alter: true });
     console.log("✓ Database connection established");
   } catch (error) {
     console.error("✗ Database connection failed:", error.message);
@@ -46,6 +48,7 @@ async function initializeDatabase() {
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/v1/admin", adminCollectiveRoutes);
+app.use("/api/admin", adminRoutes);
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "Smart Edu LMS API is running" });

@@ -15,6 +15,8 @@ export function initCourse(sequelize) {
       name: { type: DataTypes.TEXT, allowNull: false },
       description: { type: DataTypes.TEXT },
       expected_sessions: { type: DataTypes.INTEGER },
+      status: { type: DataTypes.TEXT, defaultValue: "active" },
+      is_deleted: { type: DataTypes.BOOLEAN, defaultValue: false },
       created_at: {
         type: DataTypes.DATE,
         allowNull: false,
