@@ -30,18 +30,23 @@ export const adminService = {
     },
 
     // --- UC_ADM_11: QUẢN LÝ LỚP HỌC ---
+    // --- UC_ADM_11: QUẢN LÝ LỚP HỌC ---
     getAllClasses: async () => {
         return await Class.findAll({
             include: [
                 { model: Course, as: "course", attributes: ["name", "code"] },
                 { model: User, as: "teacher", attributes: ["full_name"] },
-                { model: Enrollment, as: "enrollments", attributes: ["id"] }
+                { 
+                    model: Enrollment, 
+                    as: "enrollments", 
+                    attributes: ["id"]
+                }
             ],
+            // BỎ trường is_deleted ở đây vì Model hiện tại của bạn không có
             order: [["created_at", "DESC"]]
         });
     },
 
-    // Quan trọng: Lấy đủ data cho 4 Tab trong Figma
     getClassDetail: async (id) => {
         const cls = await Class.findByPk(id, {
             include: [
@@ -49,7 +54,8 @@ export const adminService = {
                 { model: User, as: "teacher", attributes: ["id", "full_name", "email"] },
                 { 
                     model: Enrollment, as: "enrollments",
-                    include: [{ model: User, as: "user", attributes: ["full_name", "email"] }] 
+                    // Sử dụng alias 'student' để khớp với định nghĩa quan hệ
+                    include: [{ model: User, as: "student", attributes: ["full_name", "email"] }] 
                 },
                 { model: ClassSession, as: "sessions" }
             ],
@@ -57,18 +63,18 @@ export const adminService = {
         if (!cls) throw new NotFoundError("Lớp học không tồn tại");
         return cls;
     },
-    // UC_ADM_11: Thêm lớp học mới
+
     createClass: async (classData) => {
-        const newClass = await Class.create({
+        // Tạo lớp học mới với đầy đủ các trường từ Popup Figma
+        return await Class.create({
             course_id: classData.course_id, 
-            teacher_id: classData.teacher_id, 
             name: classData.name,
+            semester: classData.semester,      
+            max_capacity: classData.max_capacity || 40, 
             start_date: classData.start_date,
             end_date: classData.end_date,
-            max_capacity: classData.max_capacity || 40,
-            status: 'active'
+            teacher_id: classData.teacher_id || null 
         });
-        return newClass;
     },
 
     updateClass: async (id, data) => {

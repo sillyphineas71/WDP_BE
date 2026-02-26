@@ -36,7 +36,7 @@ async function initializeDatabase() {
   try {
     initModels(sequelize);
     await sequelize.authenticate();
-    await sequelize.sync({ alter: true });
+    //await sequelize.sync({ alter: true });
     console.log("✓ Database connection established");
   } catch (error) {
     console.error("✗ Database connection failed:", error.message);
@@ -45,8 +45,9 @@ async function initializeDatabase() {
 }
 
 // Routes
-app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/auth", authRoutes);
+
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "Smart Edu LMS API is running" });
