@@ -12,13 +12,13 @@ export function initQuizOption(sequelize) {
         defaultValue: () => uuidv4(),
       },
       question_id: { type: DataTypes.UUID, allowNull: false },
-      option_number: { type: DataTypes.INTEGER, allowNull: false },
       option_text: { type: DataTypes.TEXT, allowNull: false },
       is_correct: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false,
       },
+      display_order: { type: DataTypes.INTEGER, allowNull: false },
     },
     {
       sequelize,

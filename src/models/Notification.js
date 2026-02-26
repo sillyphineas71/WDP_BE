@@ -12,20 +12,29 @@ export function initNotification(sequelize) {
         defaultValue: () => uuidv4(),
       },
       user_id: { type: DataTypes.UUID, allowNull: false },
+      channel: {
+        type: DataTypes.ENUM("email", "in_app"),
+        allowNull: false,
+      },
       title: { type: DataTypes.TEXT, allowNull: false },
-      message: { type: DataTypes.TEXT, allowNull: false },
-      notification_type: { type: DataTypes.TEXT, allowNull: false },
+      body: { type: DataTypes.TEXT, allowNull: false },
+      scheduled_at: { type: DataTypes.DATE },
+      sent_at: { type: DataTypes.DATE },
       is_read: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false,
       },
-      read_at: { type: DataTypes.DATE },
-      created_at: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
+      ref_type: {
+        type: DataTypes.ENUM("SESSION", "ASSESSMENT", "GRADE", "SYSTEM"),
       },
+      ref_id: { type: DataTypes.UUID },
+      status: {
+        type: DataTypes.ENUM("scheduled", "sent", "failed"),
+        allowNull: false,
+        defaultValue: "scheduled",
+      },
+      error_message: { type: DataTypes.TEXT },
     },
     {
       sequelize,
@@ -33,7 +42,7 @@ export function initNotification(sequelize) {
       timestamps: false,
       indexes: [
         { name: "idx_notifications_user", fields: ["user_id"] },
-        { name: "idx_notifications_read", fields: ["is_read"] },
+        { name: "idx_notifications_status", fields: ["status"] },
       ],
     },
   );

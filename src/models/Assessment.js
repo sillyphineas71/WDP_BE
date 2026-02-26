@@ -12,21 +12,22 @@ export function initAssessment(sequelize) {
         defaultValue: () => uuidv4(),
       },
       class_id: { type: DataTypes.UUID, allowNull: false },
+      created_by: { type: DataTypes.UUID, allowNull: false },
+      type: {
+        type: DataTypes.ENUM("QUIZ", "ESSAY"),
+        allowNull: false,
+      },
       title: { type: DataTypes.TEXT, allowNull: false },
-      description: { type: DataTypes.TEXT },
-      assessment_type: {
-        type: DataTypes.ENUM("assignment", "quiz", "exam", "project"),
+      instructions: { type: DataTypes.TEXT },
+      due_at: { type: DataTypes.DATE },
+      time_limit_minutes: { type: DataTypes.INTEGER },
+      attempt_limit: { type: DataTypes.INTEGER },
+      status: {
+        type: DataTypes.ENUM("draft", "published", "closed"),
         allowNull: false,
+        defaultValue: "draft",
       },
-      max_score: { type: DataTypes.DECIMAL(5, 2), allowNull: false },
-      weight: { type: DataTypes.DECIMAL(5, 2) },
-      due_date: { type: DataTypes.DATE },
       created_at: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-      },
-      updated_at: {
         type: DataTypes.DATE,
         allowNull: false,
         defaultValue: DataTypes.NOW,
@@ -36,7 +37,10 @@ export function initAssessment(sequelize) {
       sequelize,
       tableName: "assessments",
       timestamps: false,
-      indexes: [{ name: "idx_assessments_class", fields: ["class_id"] }],
+      indexes: [
+        { name: "idx_assessments_class", fields: ["class_id"] },
+        { name: "idx_assessments_created_by", fields: ["created_by"] },
+      ],
     },
   );
 }

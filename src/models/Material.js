@@ -12,16 +12,16 @@ export function initMaterial(sequelize) {
         defaultValue: () => uuidv4(),
       },
       class_id: { type: DataTypes.UUID, allowNull: false },
+      session_id: { type: DataTypes.UUID },
+      uploaded_by: { type: DataTypes.UUID, allowNull: false },
+      type: {
+        type: DataTypes.ENUM("pdf", "slide", "video", "link"),
+        allowNull: false,
+      },
       title: { type: DataTypes.TEXT, allowNull: false },
       description: { type: DataTypes.TEXT },
-      file_url: { type: DataTypes.TEXT },
-      file_type: { type: DataTypes.TEXT },
+      file_url: { type: DataTypes.TEXT, allowNull: false },
       created_at: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-      },
-      updated_at: {
         type: DataTypes.DATE,
         allowNull: false,
         defaultValue: DataTypes.NOW,

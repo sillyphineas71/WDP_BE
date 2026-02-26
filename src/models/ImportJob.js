@@ -11,39 +11,31 @@ export function initImportJob(sequelize) {
         primaryKey: true,
         defaultValue: () => uuidv4(),
       },
-      user_id: { type: DataTypes.UUID, allowNull: false },
-      class_id: { type: DataTypes.UUID },
-      file_name: { type: DataTypes.TEXT, allowNull: false },
-      import_type: {
-        type: DataTypes.ENUM("users", "classes", "enrollments"),
+      created_by: { type: DataTypes.UUID, allowNull: false },
+      type: {
+        type: DataTypes.ENUM("SCHEDULE"),
         allowNull: false,
       },
+      source_file_url: { type: DataTypes.TEXT, allowNull: false },
       status: {
-        type: DataTypes.ENUM("pending", "processing", "completed", "failed"),
+        type: DataTypes.ENUM("processing", "success", "failed"),
         allowNull: false,
-        defaultValue: "pending",
+        defaultValue: "processing",
       },
-      success_count: { type: DataTypes.INTEGER, defaultValue: 0 },
-      error_count: { type: DataTypes.INTEGER, defaultValue: 0 },
+      result_log_file_url: { type: DataTypes.TEXT },
+      summary_json: { type: DataTypes.JSON },
       created_at: {
         type: DataTypes.DATE,
         allowNull: false,
         defaultValue: DataTypes.NOW,
       },
-      updated_at: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-      },
+      finished_at: { type: DataTypes.DATE },
     },
     {
       sequelize,
       tableName: "import_jobs",
       timestamps: false,
-      indexes: [
-        { name: "idx_import_jobs_user", fields: ["user_id"] },
-        { name: "idx_import_jobs_class", fields: ["class_id"] },
-      ],
+      indexes: [{ name: "idx_import_jobs_created_by", fields: ["created_by"] }],
     },
   );
 }

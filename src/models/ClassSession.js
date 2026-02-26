@@ -12,15 +12,14 @@ export function initClassSession(sequelize) {
         defaultValue: () => uuidv4(),
       },
       class_id: { type: DataTypes.UUID, allowNull: false },
-      session_number: { type: DataTypes.INTEGER, allowNull: false },
-      title: { type: DataTypes.TEXT, allowNull: false },
-      description: { type: DataTypes.TEXT },
-      scheduled_date: { type: DataTypes.DATE, allowNull: false },
-      duration_minutes: { type: DataTypes.INTEGER },
-      created_at: {
-        type: DataTypes.DATE,
+      start_time: { type: DataTypes.DATE, allowNull: false },
+      end_time: { type: DataTypes.DATE, allowNull: false },
+      room: { type: DataTypes.TEXT },
+      topic: { type: DataTypes.TEXT },
+      status: {
+        type: DataTypes.ENUM("scheduled", "cancelled", "done"),
         allowNull: false,
-        defaultValue: DataTypes.NOW,
+        defaultValue: "scheduled",
       },
     },
     {

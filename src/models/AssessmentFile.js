@@ -13,8 +13,10 @@ export function initAssessmentFile(sequelize) {
       },
       assessment_id: { type: DataTypes.UUID, allowNull: false },
       file_url: { type: DataTypes.TEXT, allowNull: false },
-      file_type: { type: DataTypes.TEXT },
-      uploaded_at: {
+      original_name: { type: DataTypes.TEXT, allowNull: false },
+      mime_type: { type: DataTypes.TEXT },
+      uploaded_by: { type: DataTypes.UUID, allowNull: false },
+      created_at: {
         type: DataTypes.DATE,
         allowNull: false,
         defaultValue: DataTypes.NOW,
@@ -26,6 +28,7 @@ export function initAssessmentFile(sequelize) {
       timestamps: false,
       indexes: [
         { name: "idx_assessment_files_assessment", fields: ["assessment_id"] },
+        { name: "idx_assessment_files_uploaded_by", fields: ["uploaded_by"] },
       ],
     },
   );

@@ -60,34 +60,32 @@ export function initModels(sequelize) {
   User.hasMany(Class, { foreignKey: "teacher_id", as: "taughtClasses" });
   Class.belongsTo(User, { foreignKey: "teacher_id", as: "teacher" });
 
-  User.hasMany(Enrollment, { foreignKey: "user_id", as: "enrollments" });
-  Enrollment.belongsTo(User, { foreignKey: "user_id", as: "user" });
+  User.hasMany(Enrollment, { foreignKey: "student_id", as: "enrollments" });
+  Enrollment.belongsTo(User, { foreignKey: "student_id", as: "student" });
 
   User.hasMany(AttendanceRecord, {
-    foreignKey: "user_id",
+    foreignKey: "student_id",
     as: "attendanceRecords",
   });
-  AttendanceRecord.belongsTo(User, { foreignKey: "user_id", as: "user" });
+  AttendanceRecord.belongsTo(User, { foreignKey: "student_id", as: "student" });
 
-  User.hasMany(ImportJob, { foreignKey: "user_id", as: "importJobs" });
-  ImportJob.belongsTo(User, { foreignKey: "user_id", as: "user" });
+  User.hasMany(AttendanceRecord, {
+    foreignKey: "marked_by",
+    as: "attendanceRecordsMarkedByMe",
+  });
+  AttendanceRecord.belongsTo(User, { foreignKey: "marked_by", as: "markedBy" });
 
-  User.hasMany(Submission, { foreignKey: "user_id", as: "submissions" });
-  Submission.belongsTo(User, { foreignKey: "user_id", as: "user" });
+  User.hasMany(ImportJob, { foreignKey: "created_by", as: "importJobs" });
+  ImportJob.belongsTo(User, { foreignKey: "created_by", as: "creator" });
 
-  User.hasMany(Grade, { foreignKey: "user_id", as: "grades" });
-  Grade.belongsTo(User, { foreignKey: "user_id", as: "user" });
+  User.hasMany(Submission, { foreignKey: "student_id", as: "submissions" });
+  Submission.belongsTo(User, { foreignKey: "student_id", as: "student" });
 
   User.hasMany(Grade, { foreignKey: "graded_by", as: "gradedByMe" });
+  Grade.belongsTo(User, { foreignKey: "graded_by", as: "gradedByUser" });
 
   User.hasMany(Notification, { foreignKey: "user_id", as: "notifications" });
   Notification.belongsTo(User, { foreignKey: "user_id", as: "user" });
-
-  User.hasMany(Submission, {
-    foreignKey: "graded_by",
-    as: "submissionsGradedByMe",
-  });
-  Submission.belongsTo(User, { foreignKey: "graded_by", as: "gradedBy" });
 
   // Course associations
   Course.hasMany(Class, { foreignKey: "course_id", as: "classes" });
@@ -108,11 +106,11 @@ export function initModels(sequelize) {
 
   // ClassSession associations
   ClassSession.hasMany(AttendanceRecord, {
-    foreignKey: "class_session_id",
+    foreignKey: "session_id",
     as: "attendanceRecords",
   });
   AttendanceRecord.belongsTo(ClassSession, {
-    foreignKey: "class_session_id",
+    foreignKey: "session_id",
     as: "session",
   });
 
@@ -140,12 +138,6 @@ export function initModels(sequelize) {
     as: "submissions",
   });
   Submission.belongsTo(Assessment, {
-    foreignKey: "assessment_id",
-    as: "assessment",
-  });
-
-  Assessment.hasMany(Grade, { foreignKey: "assessment_id", as: "grades" });
-  Grade.belongsTo(Assessment, {
     foreignKey: "assessment_id",
     as: "assessment",
   });
@@ -189,14 +181,18 @@ export function initModels(sequelize) {
   });
 
   // ImportJob associations
-  ImportJob.hasMany(ImportRow, { foreignKey: "import_job_id", as: "rows" });
+  ImportJob.hasMany(ImportRow, { foreignKey: "job_id", as: "rows" });
   ImportRow.belongsTo(ImportJob, {
-    foreignKey: "import_job_id",
-    as: "importJob",
+    foreignKey: "job_id",
+    as: "job",
   });
 
-  ImportJob.belongsTo(Class, { foreignKey: "class_id", as: "class" });
-  Class.hasMany(ImportJob, { foreignKey: "class_id", as: "importJobs" });
+  // Grade associations
+  Submission.hasOne(Grade, { foreignKey: "submission_id", as: "grade" });
+  Grade.belongsTo(Submission, {
+    foreignKey: "submission_id",
+    as: "submission",
+  });
 
   return {
     Role,
