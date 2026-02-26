@@ -3,6 +3,7 @@ import "dotenv/config";
 import sequelize from "./src/config/database.js";
 import { initModels } from "./src/models/index.js";
 import authRoutes from "./src/routes/authRoutes.js";
+import adminRoutes from "./src/routes/adminRoutes.js";
 import { errorHandler } from "./src/middleware/errorHandler.js";
 
 const app = express();
@@ -44,7 +45,7 @@ async function initializeDatabase() {
 
 // Routes
 app.use("/api/auth", authRoutes);
-
+app.use("/api/admin", adminRoutes);
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "Smart Edu LMS API is running" });

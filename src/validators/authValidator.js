@@ -22,6 +22,20 @@ export const registerSchema = Joi.object({
     }),
 });
 
+export const loginSchema = Joi.object({
+  email: Joi.string().email().required().messages({
+    "string.email": VALIDATION_MESSAGES.EMAIL_INVALID,
+    "any.required": VALIDATION_MESSAGES.EMAIL_REQUIRED,
+  }),
+  password: Joi.string().required().messages({
+    "any.required": VALIDATION_MESSAGES.PASSWORD_REQUIRED,
+  }),
+});
+
 export const validateRegister = (data) => {
   return registerSchema.validate(data, { abortEarly: false });
+};
+
+export const validateLogin = (data) => {
+  return loginSchema.validate(data, { abortEarly: false });
 };

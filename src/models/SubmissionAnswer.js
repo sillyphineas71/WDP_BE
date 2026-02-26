@@ -13,9 +13,10 @@ export function initSubmissionAnswer(sequelize) {
       },
       submission_id: { type: DataTypes.UUID, allowNull: false },
       question_id: { type: DataTypes.UUID, allowNull: false },
+      selected_option_id: { type: DataTypes.UUID },
       answer_text: { type: DataTypes.TEXT },
       is_correct: { type: DataTypes.BOOLEAN },
-      points_earned: { type: DataTypes.DECIMAL(5, 2) },
+      score: { type: DataTypes.DECIMAL(5, 2) },
     },
     {
       sequelize,

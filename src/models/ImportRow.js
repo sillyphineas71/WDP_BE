@@ -11,22 +11,27 @@ export function initImportRow(sequelize) {
         primaryKey: true,
         defaultValue: () => uuidv4(),
       },
-      import_job_id: { type: DataTypes.UUID, allowNull: false },
+      job_id: { type: DataTypes.UUID, allowNull: false },
       row_number: { type: DataTypes.INTEGER, allowNull: false },
-      row_data: { type: DataTypes.JSON, allowNull: false },
+      payload_json: { type: DataTypes.JSON, allowNull: false },
       status: {
-        type: DataTypes.ENUM("pending", "success", "failed"),
+        type: DataTypes.ENUM("ok", "error"),
         allowNull: false,
-        defaultValue: "pending",
+        defaultValue: "ok",
       },
       error_message: { type: DataTypes.TEXT },
-      processed_at: { type: DataTypes.DATE },
+      created_entity_id: { type: DataTypes.UUID },
+      created_at: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+      },
     },
     {
       sequelize,
       tableName: "import_rows",
       timestamps: false,
-      indexes: [{ name: "idx_import_rows_job", fields: ["import_job_id"] }],
+      indexes: [{ name: "idx_import_rows_job", fields: ["job_id"] }],
     },
   );
 }

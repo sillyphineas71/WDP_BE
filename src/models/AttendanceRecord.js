@@ -11,13 +11,15 @@ export function initAttendanceRecord(sequelize) {
         primaryKey: true,
         defaultValue: () => uuidv4(),
       },
-      user_id: { type: DataTypes.UUID, allowNull: false },
-      class_session_id: { type: DataTypes.UUID, allowNull: false },
-      attendance_status: {
+      session_id: { type: DataTypes.UUID, allowNull: false },
+      student_id: { type: DataTypes.UUID, allowNull: false },
+      status: {
         type: DataTypes.ENUM("present", "absent", "late", "excused"),
         allowNull: false,
       },
-      recorded_at: {
+      note: { type: DataTypes.TEXT },
+      marked_by: { type: DataTypes.UUID, allowNull: false },
+      marked_at: {
         type: DataTypes.DATE,
         allowNull: false,
         defaultValue: DataTypes.NOW,
@@ -28,14 +30,14 @@ export function initAttendanceRecord(sequelize) {
       tableName: "attendance_records",
       timestamps: false,
       indexes: [
-        { name: "idx_attendance_records_user", fields: ["user_id"] },
+        { name: "idx_attendance_records_student", fields: ["student_id"] },
         {
           name: "idx_attendance_records_session",
-          fields: ["class_session_id"],
+          fields: ["session_id"],
         },
         {
-          name: "idx_attendance_records_user_session",
-          fields: ["user_id", "class_session_id"],
+          name: "idx_attendance_records_session_student",
+          fields: ["session_id", "student_id"],
           unique: true,
         },
       ],

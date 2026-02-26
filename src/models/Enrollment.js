@@ -11,14 +11,14 @@ export function initEnrollment(sequelize) {
         primaryKey: true,
         defaultValue: () => uuidv4(),
       },
-      user_id: { type: DataTypes.UUID, allowNull: false },
       class_id: { type: DataTypes.UUID, allowNull: false },
+      student_id: { type: DataTypes.UUID, allowNull: false },
       status: {
-        type: DataTypes.ENUM("active", "dropped", "completed"),
+        type: DataTypes.ENUM("active", "dropped"),
         allowNull: false,
         defaultValue: "active",
       },
-      enrolled_date: {
+      joined_at: {
         type: DataTypes.DATE,
         allowNull: false,
         defaultValue: DataTypes.NOW,
@@ -29,11 +29,11 @@ export function initEnrollment(sequelize) {
       tableName: "enrollments",
       timestamps: false,
       indexes: [
-        { name: "idx_enrollments_user", fields: ["user_id"] },
+        { name: "idx_enrollments_student", fields: ["student_id"] },
         { name: "idx_enrollments_class", fields: ["class_id"] },
         {
-          name: "idx_enrollments_user_class",
-          fields: ["user_id", "class_id"],
+          name: "idx_enrollments_class_student",
+          fields: ["class_id", "student_id"],
           unique: true,
         },
       ],

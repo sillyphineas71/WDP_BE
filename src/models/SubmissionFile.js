@@ -13,8 +13,9 @@ export function initSubmissionFile(sequelize) {
       },
       submission_id: { type: DataTypes.UUID, allowNull: false },
       file_url: { type: DataTypes.TEXT, allowNull: false },
-      file_type: { type: DataTypes.TEXT },
-      uploaded_at: {
+      original_name: { type: DataTypes.TEXT, allowNull: false },
+      mime_type: { type: DataTypes.TEXT },
+      created_at: {
         type: DataTypes.DATE,
         allowNull: false,
         defaultValue: DataTypes.NOW,

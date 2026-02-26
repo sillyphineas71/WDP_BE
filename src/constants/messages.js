@@ -11,6 +11,7 @@ export const VALIDATION_MESSAGES = {
 
 export const SUCCESS_MESSAGES = {
   REGISTRATION_SUCCESS: "Registration successful",
+  LOGIN_SUCCESS: "Login successful",
   USER_CREATED: "User created successfully",
 };
 
@@ -18,4 +19,10 @@ export const ERROR_MESSAGES = {
   INTERNAL_SERVER_ERROR: "Internal server error",
   STUDENT_ROLE_NOT_FOUND: "Student role not found",
   EMAIL_ALREADY_EXISTS: "Email already exists",
+  EMAIL_NOT_FOUND: "Email not found",
+  INVALID_PASSWORD: "Invalid password",
+  USER_BLOCKED: "User account is blocked",
+  INVALID_TOKEN: "Invalid or expired token",
+  TOKEN_REQUIRED: "Token is required",
+  UNAUTHORIZED: "Unauthorized access",
 };

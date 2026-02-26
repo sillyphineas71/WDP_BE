@@ -1,5 +1,5 @@
 import express from "express";
-import { register } from "../controllers/authController.js";
+import { register, login } from "../controllers/authController.js";
 
 const router = express.Router();
 
@@ -28,5 +28,32 @@ const router = express.Router();
  * }
  */
 router.post("/register", register);
+
+/**
+ * @route   POST /api/auth/login
+ * @desc    Login user and return JWT token
+ * @access  Public
+ * @body    {
+ *   email: string (required, valid email),
+ *   password: string (required)
+ * }
+ * @return  {
+ *   success: boolean,
+ *   message: string,
+ *   statusCode: number,
+ *   data: {
+ *     token: string,
+ *     user: {
+ *       id: string,
+ *       email: string,
+ *       full_name: string,
+ *       phone: string,
+ *       status: string,
+ *       created_at: datetime
+ *     }
+ *   }
+ * }
+ */
+router.post("/login", login);
 
 export default router;
