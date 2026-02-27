@@ -14,7 +14,7 @@ export function initRole(sequelize) {
       code: {
         type: DataTypes.ENUM("ADMIN", "TEACHER", "STUDENT"),
         allowNull: false,
-        unique: true,
+        //unique: true,
       },
       name: {
         type: DataTypes.TEXT,
