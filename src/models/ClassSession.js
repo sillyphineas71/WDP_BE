@@ -23,7 +23,7 @@ export function initClassSession(sequelize) {
       },
     },
     {
-      sequelize,
+      sequelize,      
       tableName: "class_sessions",
       timestamps: false,
       indexes: [{ name: "idx_class_sessions_class", fields: ["class_id"] }],

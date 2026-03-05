@@ -18,7 +18,7 @@ export function initEnrollment(sequelize) {
         allowNull: false,
         defaultValue: "active",
       },
-      joined_at: {
+      enrolled_date: {
         type: DataTypes.DATE,
         allowNull: false,
         defaultValue: DataTypes.NOW,
