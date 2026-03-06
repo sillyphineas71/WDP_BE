@@ -1,5 +1,10 @@
 import express from "express";
-import { register, login } from "../controllers/authController.js";
+import {
+  register,
+  login,
+  verifyEmail,
+  resendVerify,
+} from "../controllers/authController.js";
 
 const router = express.Router();
 
@@ -55,5 +60,8 @@ router.post("/register", register);
  * }
  */
 router.post("/login", login);
+
+router.post("/verify-email", verifyEmail);
+router.post("/resend-verify-email", resendVerify);
 
 export default router;

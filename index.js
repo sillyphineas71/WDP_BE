@@ -37,8 +37,9 @@ async function initializeDatabase() {
   try {
     initModels(sequelize);
     await sequelize.authenticate();
-    await sequelize.sync({ alter: true });
     console.log("✓ Database connection established");
+    console.log("MJ key ends:", process.env.MAILJET_API_KEY);
+    console.log("MJ secret ends:", process.env.MAILJET_SECRET_KEY);
   } catch (error) {
     console.error("✗ Database connection failed:", error.message);
     console.warn("⚠️  Server will start without database connection");

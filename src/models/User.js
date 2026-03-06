@@ -38,9 +38,12 @@ export function initUser(sequelize) {
         type: DataTypes.TEXT,
       },
       status: {
-        type: DataTypes.ENUM("active", "blocked"),
+        type: DataTypes.STRING,
         allowNull: false,
         defaultValue: "active",
+        validate: {
+          isIn: [["active", "blocked"]],
+        },
       },
       must_change_password: {
         type: DataTypes.BOOLEAN,
@@ -60,6 +63,9 @@ export function initUser(sequelize) {
         allowNull: false,
         defaultValue: DataTypes.NOW,
       },
+      email_verified_at: { type: DataTypes.DATE },
+      email_verify_code_hash: { type: DataTypes.TEXT },
+      email_verify_code_expires_at: { type: DataTypes.DATE },
     },
     {
       sequelize,

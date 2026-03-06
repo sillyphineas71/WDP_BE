@@ -4,6 +4,11 @@ import {
   validateLogin,
 } from "../validators/authValidator.js";
 import { SUCCESS_MESSAGES } from "../constants/messages.js";
+import { verifyEmailCode, resendVerifyCode } from "../services/authService.js";
+import {
+  validateVerifyEmail,
+  validateResendVerify,
+} from "../validators/authValidator.js";
 
 export const register = async (req, res, next) => {
   try {
@@ -75,5 +80,39 @@ export const login = async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+};
+
+export const verifyEmail = async (req, res, next) => {
+  try {
+    const { error, value } = validateVerifyEmail(req.body);
+    if (error) return next(error);
+
+    const user = await verifyEmailCode(value);
+    return res.status(200).json({
+      success: true,
+      message: SUCCESS_MESSAGES.EMAIL_VERIFIED,
+      statusCode: 200,
+      data: user,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const resendVerify = async (req, res, next) => {
+  try {
+    const { error, value } = validateResendVerify(req.body);
+    if (error) return next(error);
+
+    const result = await resendVerifyCode(value);
+    return res.status(200).json({
+      success: true,
+      message: SUCCESS_MESSAGES.VERIFICATION_CODE_SENT,
+      statusCode: 200,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
   }
 };
