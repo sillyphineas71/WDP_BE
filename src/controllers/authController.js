@@ -1,39 +1,15 @@
-import { registerStudent, loginUser } from "../services/authService.js";
-import {
-  validateRegister,
-  validateLogin,
-} from "../validators/authValidator.js";
+import { loginUser } from "../services/authService.js";
+import { validateLogin } from "../validators/authValidator.js";
 import { SUCCESS_MESSAGES } from "../constants/messages.js";
 
-export const register = async (req, res, next) => {
+export const logout = async (req, res, next) => {
   try {
-    // Validate input
-    const { error, value } = validateRegister(req.body);
-
-    if (error) {
-      const validationErrors = error.details.map((detail) => ({
-        field: detail.path.join("."),
-        message: detail.message,
-      }));
-      return res.status(400).json({
-        success: false,
-        message: "Validation failed",
-        statusCode: 400,
-        error: {
-          validationErrors,
-        },
-      });
-    }
-
-    // Register student
-    const user = await registerStudent(value);
-
-    // Send success response
-    return res.status(201).json({
+    // Optionally we could invalidate tokens in a redis blacklist here
+    // but without one, we just tell the client to remove the token
+    return res.status(200).json({
       success: true,
-      message: SUCCESS_MESSAGES.REGISTRATION_SUCCESS,
-      statusCode: 201,
-      data: user,
+      message: SUCCESS_MESSAGES.LOGOUT_SUCCESS,
+      statusCode: 200,
     });
   } catch (error) {
     next(error);

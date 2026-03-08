@@ -1,9 +1,7 @@
 import { User } from "../models/User.js";
 import { Role } from "../models/Role.js";
-import { hashPassword, comparePassword } from "../utils/passwordUtils.js";
+import { comparePassword } from "../utils/passwordUtils.js";
 import {
-  ConflictError,
-  NotFoundError,
   UnauthorizedError,
 } from "../errors/AppError.js";
 import { ERROR_MESSAGES } from "../constants/messages.js";
@@ -35,40 +33,7 @@ const generateToken = (user, role) => {
   return token;
 };
 
-export const registerStudent = async (userData) => {
-  // Check if email already exists
-  const existingUser = await User.findOne({
-    where: { email: userData.email },
-  });
 
-  if (existingUser) {
-    throw new ConflictError(ERROR_MESSAGES.EMAIL_ALREADY_EXISTS);
-  }
-
-  // Get student role
-  const studentRole = await Role.findOne({
-    where: { code: "STUDENT" },
-  });
-
-  if (!studentRole) {
-    throw new NotFoundError(ERROR_MESSAGES.STUDENT_ROLE_NOT_FOUND);
-  }
-
-  // Hash password
-  const hashedPassword = await hashPassword(userData.password);
-
-  // Create user
-  const user = await User.create({
-    email: userData.email,
-    password_hash: hashedPassword,
-    full_name: userData.full_name,
-    phone: userData.phone || null,
-    role_id: studentRole.id,
-  });
-
-  // Return user without password
-  return formatUserResponse(user);
-};
 
 export const loginUser = async (userData) => {
   // Find user by email
