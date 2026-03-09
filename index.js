@@ -3,6 +3,7 @@ import "dotenv/config";
 import sequelize from "./src/config/database.js";
 import { initModels } from "./src/models/index.js";
 import authRoutes from "./src/routes/authRoutes.js";
+import userRoutes from "./src/routes/userRoutes.js";
 import adminCollectiveRoutes from "./src/routes/adminCollectiveRoutes.js";
 import adminRoutes from "./src/routes/adminRoutes.js";
 import { errorHandler } from "./src/middleware/errorHandler.js";
@@ -37,6 +38,7 @@ async function initializeDatabase() {
   try {
     initModels(sequelize);
     await sequelize.authenticate();
+    // await sequelize.sync({ alter: true });
     console.log("✓ Database connection established");
     console.log("MJ key ends:", process.env.MAILJET_API_KEY);
     console.log("MJ secret ends:", process.env.MAILJET_SECRET_KEY);
@@ -47,7 +49,9 @@ async function initializeDatabase() {
 }
 
 // Routes
+// Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
 app.use("/api/v1/admin", adminCollectiveRoutes);
 app.use("/api/admin", adminRoutes);
 // Health check

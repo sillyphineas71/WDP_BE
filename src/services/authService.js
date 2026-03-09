@@ -1,11 +1,7 @@
 import { User } from "../models/User.js";
 import { Role } from "../models/Role.js";
-import { hashPassword, comparePassword } from "../utils/passwordUtils.js";
-import {
-  ConflictError,
-  NotFoundError,
-  UnauthorizedError,
-} from "../errors/AppError.js";
+import { comparePassword } from "../utils/passwordUtils.js";
+import { UnauthorizedError } from "../errors/AppError.js";
 import { ERROR_MESSAGES } from "../constants/messages.js";
 import { USER_ROLES } from "../constants/roles.js";
 import jwt from "jsonwebtoken";
