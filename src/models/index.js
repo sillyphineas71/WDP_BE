@@ -60,8 +60,8 @@ export function initModels(sequelize) {
   User.hasMany(Class, { foreignKey: "teacher_id", as: "taughtClasses" });
   Class.belongsTo(User, { foreignKey: "teacher_id", as: "teacher" });
 
-  User.hasMany(Enrollment, { foreignKey: "student_id", as: "enrollments" });
-  Enrollment.belongsTo(User, { foreignKey: "student_id", as: "student" });
+  User.hasMany(Enrollment, { foreignKey: "user_id", as: "enrollments" });
+  Enrollment.belongsTo(User, { foreignKey: "user_id", as: "student" });
 
   User.hasMany(AttendanceRecord, {
     foreignKey: "student_id",
