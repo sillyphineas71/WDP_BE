@@ -37,7 +37,7 @@ async function initializeDatabase() {
   try {
     initModels(sequelize);
     await sequelize.authenticate();
-    await sequelize.sync({ alter: true });
+    // await sequelize.sync({ alter: true });
     console.log("✓ Database connection established");
   } catch (error) {
     console.error("✗ Database connection failed:", error.message);
