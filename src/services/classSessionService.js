@@ -314,10 +314,9 @@ export const cancelManualClassSession = async (adminId, sessionId, reason) => {
     await session.update(
       {
         status: "cancelled",
-        // lưu reason vào topic (vì model không có cancel_reason)
-        topic: reason
-          ? `${session.topic ? session.topic + " | " : ""}Cancel: ${reason}`
-          : session.topic,
+        cancelled_at: new Date(),
+        cancelled_reason: reason || null,
+        // giữ lại topic gốc, không nối reason vào topic nữa
       },
       { transaction: t },
     );

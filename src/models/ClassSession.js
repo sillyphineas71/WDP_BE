@@ -21,6 +21,8 @@ export function initClassSession(sequelize) {
         allowNull: false,
         defaultValue: "scheduled",
       },
+      cancelled_at: { type: DataTypes.DATE, allowNull: true, defaultValue: null },
+      cancelled_reason: { type: DataTypes.TEXT, allowNull: true, defaultValue: null },
     },
     {
       sequelize,
