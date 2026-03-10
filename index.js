@@ -6,6 +6,8 @@ import authRoutes from "./src/routes/authRoutes.js";
 import adminCollectiveRoutes from "./src/routes/adminCollectiveRoutes.js";
 import adminRoutes from "./src/routes/adminRoutes.js";
 import studentRoutes from "./src/routes/studentRoutes.js";
+import teacherRoutes from "./src/routes/teacherRoutes.js";
+import uploadRoutes from "./src/routes/uploadRoutes.js"; 
 import { errorHandler } from "./src/middleware/errorHandler.js";
 
 const app = express();
@@ -50,8 +52,9 @@ async function initializeDatabase() {
 app.use("/api/auth", authRoutes);
 app.use("/api/v1/admin", adminCollectiveRoutes);
 app.use("/api/admin", adminRoutes);
-app.use("/api/auth", authRoutes);
-app.use("/api/student", studentRoutes);
+app.use("/api/students", studentRoutes); // <-- Đã sửa thành students
+app.use("/api/teachers", teacherRoutes);
+app.use("/api/upload", uploadRoutes); 
 
 // Health check
 app.get("/api/health", (req, res) => {

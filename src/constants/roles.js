@@ -1,7 +1,7 @@
 export const USER_ROLES = {
-  ADMIN: "admin",
-  TEACHER: "teacher",
-  STUDENT: "student",
+  ADMIN: "ADMIN",
+  TEACHER: "TEACHER",
+  STUDENT: "STUDENT",
 };
 
 export const USER_STATUS = {

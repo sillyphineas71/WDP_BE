@@ -1,3 +1,4 @@
+// src/services/studentService.js
 import { Class } from "../models/Class.js";
 import { Enrollment } from "../models/Enrollment.js";
 import { User } from "../models/User.js";
@@ -6,6 +7,12 @@ import { Assessment } from "../models/Assessment.js";
 import { Material } from "../models/Material.js";
 import { Notification } from "../models/Notification.js";
 import { Op } from "sequelize";
+import { Submission } from "../models/Submission.js";
+import { AssessmentFile } from "../models/AssessmentFile.js";
+import { ConflictError, NotFoundError } from "../errors/AppError.js";
+import sequelize from "../config/database.js";
+import { Grade } from "../models/Grade.js"; // <--- THÊM DÒNG NÀY (Hoặc thêm Grade vào cùng hàng)
+import { SubmissionFile } from "../models/SubmissionFile.js"; // Hoặc import từ index.js tùy cấu trúc của bạn
 
 export const studentService = {
   getDashboard: async (studentId) => {
@@ -15,12 +22,12 @@ export const studentService = {
       include: [
         {
           model: Class,
-          as: "classInfo",
+          as: "class", // Đã sửa từ classInfo -> class
           include: [
             {
               model: User,
-              as: "teacherInfo",
-              attributes: ["id", "display_name"],
+              as: "teacher", // Đã sửa từ teacherInfo -> teacher
+              attributes: ["id", "full_name"], // Đã sửa từ display_name -> full_name
             },
           ],
         },
@@ -29,7 +36,6 @@ export const studentService = {
 
     const enrolledClassIds = enrollments.map((e) => e.class_id);
     
-    // Check if enrolled in any class
     if (enrolledClassIds.length === 0) {
       return {
         classes: [],
@@ -39,7 +45,7 @@ export const studentService = {
       };
     }
 
-    // 2. Count upcoming assessments (Assignments & Quizzes)
+    // 2. Count upcoming assessments
     const upcomingAssessments = await Assessment.count({
       where: {
         class_id: { [Op.in]: enrolledClassIds },
@@ -62,8 +68,8 @@ export const studentService = {
       include: [
         {
           model: Class,
-          as: "classInfo",
-          attributes: ["id", "name", "room"],
+          as: "class", // Đã sửa
+          attributes: ["id", "name"],
         },
       ],
       order: [["start_time", "ASC"]],
@@ -71,24 +77,24 @@ export const studentService = {
 
     const formattedSessions = todaySessions.map(session => ({
         id: session.id,
-        title: session.classInfo.name,
+        title: session.class.name,
         date: session.start_time.toLocaleDateString('vi-VN'),
         time: `${session.start_time.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit'})} - ${session.end_time.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit'})}`,
-        location: `Room ${session.classInfo.room || 'TBA'}`
+        location: `Room ${session.room || 'TBA'}`
     }));
 
     const formattedClasses = enrollments.map(e => ({
-        id: e.classInfo.id,
-        name: e.classInfo.name,
-        teacher: e.classInfo.teacherInfo ? e.classInfo.teacherInfo.display_name : "N/A",
-        room: e.classInfo.room || "TBA"
+        id: e.class.id,
+        name: e.class.name,
+        teacher: e.class.teacher ? e.class.teacher.full_name : "N/A",
+        room: e.class.room || "TBA"
     }));
 
     return {
       classes: formattedClasses,
       upcomingAssessments,
       todaySessions: formattedSessions,
-      recentGrades: [] // Implement later if needed
+      recentGrades: [] 
     };
   },
 
@@ -98,12 +104,12 @@ export const studentService = {
       include: [
         {
           model: Class,
-          as: "classInfo",
+          as: "class", // Đã sửa
           include: [
             {
               model: User,
-              as: "teacherInfo",
-              attributes: ["id", "display_name"],
+              as: "teacher", // Đã sửa
+              attributes: ["id", "full_name"],
             },
             {
               model: ClassSession,
@@ -116,10 +122,9 @@ export const studentService = {
     });
 
     return enrollments.map(e => {
-        const c = e.classInfo;
+        const c = e.class; // Đã sửa
         
-        // Format schedule from sessions
-        const schedule = c.sessions.map(s => {
+        const schedule = (c.sessions || []).map(s => {
             const dayOptions = { weekday: 'short' };
             const timeOptions = { hour: '2-digit', minute: '2-digit' };
             return {
@@ -132,7 +137,7 @@ export const studentService = {
         return {
             id: c.id,
             name: c.name,
-            teacher: c.teacherInfo ? c.teacherInfo.display_name : "N/A",
+            teacher: c.teacher ? c.teacher.full_name : "N/A",
             room: c.room || "TBA",
             schedule: schedule
         };
@@ -140,22 +145,18 @@ export const studentService = {
   },
 
   getClassDetails: async (studentId, classId) => {
-    // 1. Check enrollment
     const enrollment = await Enrollment.findOne({
       where: { user_id: studentId, class_id: classId },
     });
 
-    if (!enrollment) {
-      throw new Error("You are not enrolled in this class");
-    }
+    if (!enrollment) throw new Error("You are not enrolled in this class");
 
-    // 2. Class details
     const cl = await Class.findByPk(classId, {
       include: [
         {
           model: User,
-          as: "teacherInfo",
-          attributes: ["id", "display_name"],
+          as: "teacher", // Đã sửa
+          attributes: ["id", "full_name"],
         },
         {
            model: ClassSession,
@@ -166,37 +167,35 @@ export const studentService = {
       ],
     });
 
-    if (!cl) {
-        throw new Error("Class not found");
-    }
+    if (!cl) throw new Error("Class not found");
 
     const studentsCount = await Enrollment.count({ where: { class_id: classId }});
 
-    // 3. Materials
     const materials = await Material.findAll({
       where: { class_id: classId },
       order: [["created_at", "DESC"]],
     });
 
-    // 4. Assessments (published only)
     const assignments = await Assessment.findAll({
       where: { class_id: classId, status: { [Op.ne]: 'draft' } },
       order: [["due_at", "ASC"]],
     });
 
-    // 5. Announcements (Notifications)
-    const announcements = await Notification.findAll({
-      where: { class_id: classId, type: "ANNOUNCEMENT" }, // assuming type exists, or omit
-      order: [["created_at", "DESC"]],
-    });
+// TẠM THỜI BỎ QUA BẢNG NOTIFICATION ĐỂ TRÁNH LỖI CLASS_ID
+    // const announcements = await Notification.findAll({
+    //   where: { class_id: classId, type: "ANNOUNCEMENT" }, 
+    //   order: [["created_at", "DESC"]],
+    // });
+    
+    const announcements = []; // Để mảng rỗng để giao diện vẫn render được
 
     return {
       id: cl.id,
       name: cl.name,
-      teacher: cl.teacherInfo ? cl.teacherInfo.display_name : "N/A",
+      teacher: cl.teacher ? cl.teacher.full_name : "N/A",
       room: cl.room || "TBA",
       studentsCount,
-      schedule: cl.sessions.map(s => ({
+      schedule: (cl.sessions || []).map(s => ({
           day: s.start_time.toLocaleDateString('en-US', { weekday: 'long' }),
           time: `${s.start_time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit'})} - ${s.end_time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit'})}`,
       })),
@@ -210,7 +209,7 @@ export const studentService = {
           id: a.id,
           title: a.title,
           due: a.due_at ? a.due_at.toLocaleString('en-US') : 'No due date',
-          points: a.type === 'QUIZ' ? '100' : '100', // adjust based on schema
+          points: a.type === 'QUIZ' ? '100' : '100', 
       })),
       announcements: announcements.map(a => ({
           id: a.id,
@@ -220,4 +219,118 @@ export const studentService = {
       }))
     };
   },
+
+  // --- CÁC HÀM CHO BÀI TẬP ---
+// Tìm đến hàm getAssignmentDetail và sửa như sau:
+getAssignmentDetail: async (studentId, assessmentId) => {
+    const assessment = await Assessment.findByPk(assessmentId, {
+      include: [{ model: AssessmentFile, as: 'files' }]
+    });
+    
+    if (!assessment) throw new Error("Không tìm thấy bài tập.");
+
+    const submission = await Submission.findOne({
+      where: { 
+        assessment_id: assessmentId, 
+        student_id: studentId 
+      },
+      attributes: ['id', 'assessment_id', 'student_id', 'status', 'submitted_at', 'content_text'],
+      include: [
+        { 
+          model: Grade, 
+          as: 'grade',
+          attributes: ['final_score', 'final_feedback', 'is_published']
+        },
+        // THÊM ĐOẠN NÀY: Kéo theo các file sinh viên đã nộp
+        {
+          model: SubmissionFile, 
+          as: 'files',
+          attributes: ['id', 'file_url', 'original_name']
+        }
+      ]
+    });
+
+    return { assessment, submission };
+  },
+
+submitAssignment: async (studentId, assessmentId, data) => {
+    const assessment = await Assessment.findByPk(assessmentId);
+    if (!assessment) throw new Error("Không tìm thấy bài tập.");
+
+    const now = new Date();
+    
+    // Kiểm tra hạn nộp (Cutoff)
+    if (assessment.cutoff_at && now > new Date(assessment.cutoff_at)) {
+      throw new Error("Hệ thống đã đóng cổng nộp bài.");
+    }
+
+    return await sequelize.transaction(async (t) => {
+      // 1. Tìm hoặc tạo bản ghi Submission
+      let submission = await Submission.findOne({ 
+        where: { assessment_id: assessmentId, student_id: studentId },
+        transaction: t
+      });
+
+      if (submission) {
+        await submission.update({
+          status: 'submitted',
+          submitted_at: now,
+          content_text: `Sinh viên đã nộp ${data.files ? data.files.length : 0} file`
+        }, { transaction: t });
+      } else {
+        submission = await Submission.create({
+          assessment_id: assessmentId,
+          student_id: studentId,
+          status: 'submitted',
+          submitted_at: now,
+          started_at: now,
+          content_text: `Sinh viên đã nộp ${data.files ? data.files.length : 0} file`
+        }, { transaction: t });
+      }
+
+// 2. LƯU FILE VÀO BẢNG SubmissionFile
+      if (data.files && Array.isArray(data.files) && data.files.length > 0) {
+        // Xóa các file cũ
+        const { SubmissionFile } = sequelize.models; 
+        
+        await SubmissionFile.destroy({
+          where: { submission_id: submission.id },
+          transaction: t
+        });
+
+        // HÀM TẠO MẢNG DỮ LIỆU ĐÃ ĐƯỢC CẬP NHẬT ĐỂ TRÁNH LỖI mime_type
+        const filesToSave = data.files.map(fileItem => {
+          let fileUrl = typeof fileItem === 'string' ? fileItem : fileItem.url || fileItem.file_url || '';
+          let originalName = fileItem.original_name || fileItem.name;
+
+          if (!originalName && fileUrl) {
+             originalName = fileUrl.split('/').pop().split(/[?#]/)[0]; 
+          }
+
+          // Đoán mime_type dựa trên tên file
+          let mimeType = 'application/octet-stream'; // Mặc định nếu không rõ
+          if (originalName) {
+              const lowerName = originalName.toLowerCase();
+              if (lowerName.endsWith('.pdf')) mimeType = 'application/pdf';
+              else if (lowerName.endsWith('.docx')) mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+              else if (lowerName.endsWith('.doc')) mimeType = 'application/msword';
+              else if (lowerName.endsWith('.zip')) mimeType = 'application/zip';
+              else if (lowerName.endsWith('.png')) mimeType = 'image/png';
+              else if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) mimeType = 'image/jpeg';
+          }
+
+          return {
+            submission_id: submission.id,
+            file_url: fileUrl,
+            original_name: originalName || 'uploaded_file',
+            mime_type: mimeType // THÊM DÒNG NÀY ĐỂ FIX LỖI 23502
+          };
+        });
+
+        await SubmissionFile.bulkCreate(filesToSave, { transaction: t });
+      }
+
+      return submission;
+    });
+  }
 };
