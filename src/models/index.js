@@ -1,9 +1,7 @@
+// src/models/index.js
 import { initRole, Role } from "./Role.js";
 import { initUser, User } from "./User.js";
-import {
-  initPasswordResetToken,
-  PasswordResetToken,
-} from "./PasswordResetToken.js";
+import { initPasswordResetToken, PasswordResetToken } from "./PasswordResetToken.js";
 import { initCourse, Course } from "./Course.js";
 import { initClass, Class } from "./Class.js";
 import { initEnrollment, Enrollment } from "./Enrollment.js";
@@ -21,9 +19,10 @@ import { initSubmissionAnswer, SubmissionAnswer } from "./SubmissionAnswer.js";
 import { initSubmissionFile, SubmissionFile } from "./SubmissionFile.js";
 import { initGrade, Grade } from "./Grade.js";
 import { initNotification, Notification } from "./Notification.js";
+import sequelize from "../config/database.js";
 
 export function initModels(sequelize) {
-  // Initialize all models
+  // 1. Khởi tạo tất cả models
   initRole(sequelize);
   initUser(sequelize);
   initPasswordResetToken(sequelize);
@@ -45,59 +44,29 @@ export function initModels(sequelize) {
   initGrade(sequelize);
   initNotification(sequelize);
 
-  // Define associations
-  // Role associations
+  // 2. Định nghĩa quan hệ (Associations)
+
+  // Role & User
   Role.hasMany(User, { foreignKey: "role_id", as: "users" });
   User.belongsTo(Role, { foreignKey: "role_id", as: "role" });
 
-  // User associations
-  User.hasMany(PasswordResetToken, {
-    foreignKey: "user_id",
-    as: "resetTokens",
-  });
+  // User & Password Tokens
+  User.hasMany(PasswordResetToken, { foreignKey: "user_id", as: "resetTokens" });
   PasswordResetToken.belongsTo(User, { foreignKey: "user_id", as: "user" });
 
+  // Teacher & Classes
   User.hasMany(Class, { foreignKey: "teacher_id", as: "taughtClasses" });
   Class.belongsTo(User, { foreignKey: "teacher_id", as: "teacher" });
 
+  // Student & Enrollments
   User.hasMany(Enrollment, { foreignKey: "user_id", as: "enrollments" });
   Enrollment.belongsTo(User, { foreignKey: "user_id", as: "student" });
 
-  User.hasMany(AttendanceRecord, {
-    foreignKey: "user_id",
-    as: "attendanceRecords",
-  });
-  AttendanceRecord.belongsTo(User, { foreignKey: "user_id", as: "student" });
-
-  User.hasMany(AttendanceRecord, {
-    foreignKey: "marked_by",
-    as: "attendanceRecordsMarkedByMe",
-  });
-  AttendanceRecord.belongsTo(User, { foreignKey: "marked_by", as: "markedBy" });
-
-  User.hasMany(ImportJob, { foreignKey: "created_by", as: "importJobs" });
-  ImportJob.belongsTo(User, { foreignKey: "created_by", as: "creator" });
-
-  User.hasMany(Submission, { foreignKey: "user_id", as: "submissions" });
-  Submission.belongsTo(User, { foreignKey: "user_id", as: "student" });
-
-  User.hasMany(Submission, {
-    foreignKey: "graded_by",
-    as: "gradedSubmissions",
-  });
-  Submission.belongsTo(User, { foreignKey: "graded_by", as: "grader" });
-
-  // User.hasMany(Grade, { foreignKey: "graded_by", as: "gradedByMe" });
-  // Grade.belongsTo(User, { foreignKey: "graded_by", as: "gradedByUser" });
-
-  User.hasMany(Notification, { foreignKey: "user_id", as: "notifications" });
-  Notification.belongsTo(User, { foreignKey: "user_id", as: "user" });
-
-  // Course associations
+  // Course & Class
   Course.hasMany(Class, { foreignKey: "course_id", as: "classes" });
   Class.belongsTo(Course, { foreignKey: "course_id", as: "course" });
 
-  // Class associations
+  // Class & Sub-resources
   Class.hasMany(Enrollment, { foreignKey: "class_id", as: "enrollments" });
   Enrollment.belongsTo(Class, { foreignKey: "class_id", as: "class" });
 
@@ -110,16 +79,15 @@ export function initModels(sequelize) {
   Class.hasMany(Assessment, { foreignKey: "class_id", as: "assessments" });
   Assessment.belongsTo(Class, { foreignKey: "class_id", as: "class" });
 
-  // ClassSession associations
-  ClassSession.hasMany(AttendanceRecord, {
-    foreignKey: "session_id",
-    as: "attendanceRecords",
-  });
-  AttendanceRecord.belongsTo(ClassSession, {
-    foreignKey: "session_id",
-    as: "session",
-  });
+  // Student & Submissions
+  User.hasMany(Submission, { foreignKey: "student_id", as: "submissions" });
+  Submission.belongsTo(User, { foreignKey: "student_id", as: "student" });
 
+  // Assessment & Files
+  Assessment.hasMany(AssessmentFile, { foreignKey: 'assessment_id', as: 'files' });
+  AssessmentFile.belongsTo(Assessment, { foreignKey: 'assessment_id', as: 'assessment' });
+
+  // ClassSession & Materials (from dev branch)
   ClassSession.hasMany(Material, {
     foreignKey: "session_id",
     as: "materials",
@@ -129,136 +97,39 @@ export function initModels(sequelize) {
     as: "session",
   });
 
-  // Assessment associations
-  Assessment.hasMany(AssessmentFile, {
-    foreignKey: "assessment_id",
-    as: "files",
-  });
-  AssessmentFile.belongsTo(Assessment, {
-    foreignKey: "assessment_id",
-    as: "assessment",
-  });
+  // Assessment & Questions/Submissions (from minh-branch)
+  Assessment.hasMany(QuizQuestion, { foreignKey: "assessment_id", as: "questions" });
+  QuizQuestion.belongsTo(Assessment, { foreignKey: "assessment_id", as: "assessment" });
 
-  Assessment.hasMany(QuizQuestion, {
-    foreignKey: "assessment_id",
-    as: "questions",
-  });
-  QuizQuestion.belongsTo(Assessment, {
-    foreignKey: "assessment_id",
-    as: "assessment",
-  });
+  Assessment.hasMany(Submission, { foreignKey: "assessment_id", as: "submissions" });
+  Submission.belongsTo(Assessment, { foreignKey: "assessment_id", as: "assessment" });
 
-  Assessment.hasMany(Submission, {
-    foreignKey: "assessment_id",
-    as: "submissions",
-  });
-  Submission.belongsTo(Assessment, {
-    foreignKey: "assessment_id",
-    as: "assessment",
-  });
+  // Submission & Answers/Files/Grades
+  Submission.hasMany(SubmissionAnswer, { foreignKey: "submission_id", as: "answers" });
+  SubmissionAnswer.belongsTo(Submission, { foreignKey: "submission_id", as: "submission" });
 
-  // QuizQuestion associations
-  QuizQuestion.hasMany(QuizOption, {
-    foreignKey: "question_id",
-    as: "options",
-  });
-  QuizOption.belongsTo(QuizQuestion, {
-    foreignKey: "question_id",
-    as: "question",
-  });
+  Submission.hasMany(SubmissionFile, { foreignKey: "submission_id", as: "files" });
+  SubmissionFile.belongsTo(Submission, { foreignKey: "submission_id", as: "submission" });
 
-  QuizQuestion.hasMany(SubmissionAnswer, {
-    foreignKey: "question_id",
-    as: "submissionAnswers",
-  });
-  SubmissionAnswer.belongsTo(QuizQuestion, {
-    foreignKey: "question_id",
-    as: "question",
-  });
+  // Grade nối với Submission
+  Submission.hasOne(Grade, { foreignKey: "submission_id", as: "grade" });
+  Grade.belongsTo(Submission, { foreignKey: "submission_id", as: "submission" });
 
-  // Submission associations
-  Submission.hasMany(SubmissionAnswer, {
-    foreignKey: "submission_id",
-    as: "answers",
-  });
-  SubmissionAnswer.belongsTo(Submission, {
-    foreignKey: "submission_id",
-    as: "submission",
-  });
-
-  Submission.hasMany(SubmissionFile, {
-    foreignKey: "submission_id",
-    as: "files",
-  });
-  SubmissionFile.belongsTo(Submission, {
-    foreignKey: "submission_id",
-    as: "submission",
-  });
-
-  // ImportJob associations
-  ImportJob.hasMany(ImportRow, { foreignKey: "job_id", as: "rows" });
-  ImportRow.belongsTo(ImportJob, {
-    foreignKey: "job_id",
-    as: "job",
-  });
-
-  // Grade associations
-  User.hasMany(Grade, { foreignKey: "user_id", as: "grades" });
-  Grade.belongsTo(User, { foreignKey: "user_id", as: "student" });
-
-  User.hasMany(Grade, { foreignKey: "graded_by", as: "gradedByMe" });
-  Grade.belongsTo(User, { foreignKey: "graded_by", as: "gradedByUser" });
-
-  Assessment.hasMany(Grade, { foreignKey: "assessment_id", as: "grades" });
-  Grade.belongsTo(Assessment, {
-    foreignKey: "assessment_id",
-    as: "assessment",
-  });
+  // Notification
+  User.hasMany(Notification, { foreignKey: "user_id", as: "notifications" });
+  Notification.belongsTo(User, { foreignKey: "user_id", as: "user" });
 
   return {
-    Role,
-    User,
-    PasswordResetToken,
-    Course,
-    Class,
-    Enrollment,
-    ClassSession,
-    AttendanceRecord,
-    Material,
-    Assessment,
-    AssessmentFile,
-    QuizQuestion,
-    QuizOption,
-    ImportJob,
-    ImportRow,
-    Submission,
-    SubmissionAnswer,
-    SubmissionFile,
-    Grade,
-    Notification,
+    Role, User, PasswordResetToken, Course, Class, Enrollment,
+    ClassSession, AttendanceRecord, Material, Assessment, AssessmentFile,
+    QuizQuestion, QuizOption, ImportJob, ImportRow, Submission,
+    SubmissionAnswer, SubmissionFile, Grade, Notification,
   };
 }
-import sequelize from "../config/database.js";
+
 export {
-  sequelize,
-  Role,
-  User,
-  PasswordResetToken,
-  Course,
-  Class,
-  Enrollment,
-  ClassSession,
-  AttendanceRecord,
-  Material,
-  Assessment,
-  AssessmentFile,
-  QuizQuestion,
-  QuizOption,
-  ImportJob,
-  ImportRow,
-  Submission,
-  SubmissionAnswer,
-  SubmissionFile,
-  Grade,
-  Notification,
+  sequelize, Role, User, PasswordResetToken, Course, Class, Enrollment,
+  ClassSession, AttendanceRecord, Material, Assessment, AssessmentFile,
+  QuizQuestion, QuizOption, ImportJob, ImportRow, Submission,
+  SubmissionAnswer, SubmissionFile, Grade, Notification,
 };

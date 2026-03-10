@@ -1,58 +1,100 @@
+// src/routes/teacherRoutes.js
 import express from "express";
-import { teacherController } from "../controllers/teacherController.js";
+import {
+  getMyClasses,
+  createQuiz,
+  createAssignment,
+  publishGrades,
+  createEssayAssessment,
+  getAssignmentsByClass,
+  updateEssayAssessment,
+  deleteAssessment,
+  getSubmissionsByAssessment,
+  getSubmissionForGrading,
+  gradeSubmission,
+  aiGradeSubmission
+} from "../controllers/teacherController.js";
 import { isAuth, authorize } from "../middleware/isAuth.js";
+import { USER_ROLES } from "../constants/roles.js";
 import * as scheduleCtrl from "../controllers/teacherScheduleController.js";
 import * as materialCtrl from "../controllers/materialController.js";
 import { uploadSingleFile } from "../middleware/uploadMiddleware.js";
 
 const router = express.Router();
 
+// -----------------------------------------------------------------
+// Dev branch: Quiz & Assignment creation routes (nam-branch)
+// -----------------------------------------------------------------
+
 // UC_TEA_08: Teacher tạo quiz
 router.post(
   "/classes/:classId/quizzes",
   isAuth,
-  authorize("TEACHER"),
-  teacherController.createQuiz,
+  authorize(USER_ROLES.TEACHER),
+  createQuiz,
 );
 
 // UC_TEA_10: Teacher tạo assignment (bài tập tự luận/nộp file)
 router.post(
   "/classes/:classId/assignments",
   isAuth,
-  authorize("TEACHER"),
-  teacherController.createAssignment,
-);
-
-// Lấy danh sách lớp của giáo viên
-router.get(
-  "/teacher/classes",
-  isAuth,
-  authorize("TEACHER"),
-  teacherController.getMyClasses,
-);
-
-// Giữ thêm route cũ để không mất code / không vỡ FE cũ nếu đang dùng
-router.get(
-  "/classes",
-  isAuth,
-  authorize("TEACHER"),
-  teacherController.getMyClasses,
+  authorize(USER_ROLES.TEACHER),
+  createAssignment,
 );
 
 // UC_TEA_15: Công bố điểm (Publish grades)
 router.put(
   "/classes/:classId/assessments/:assessmentId/grades/publish",
   isAuth,
-  authorize("TEACHER"),
-  teacherController.publishGrades,
+  authorize(USER_ROLES.TEACHER),
+  publishGrades,
 );
 
+// -----------------------------------------------------------------
+// Minh-branch: Essay Assessment CRUD & Grading routes
+// -----------------------------------------------------------------
+
+// API lấy danh sách lớp của tôi (minh-branch)
+router.get("/my-classes", isAuth, authorize(USER_ROLES.TEACHER), getMyClasses);
+
+// Giữ thêm route cũ để không vỡ FE cũ nếu đang dùng
+router.get("/classes", isAuth, authorize(USER_ROLES.TEACHER), getMyClasses);
+
+// Thêm route /teacher/classes cho dev branch compatibility
+router.get("/teacher/classes", isAuth, authorize(USER_ROLES.TEACHER), getMyClasses);
+
+// API lấy danh sách bài tập của một lớp
+router.get("/classes/:classId/assessments", isAuth, authorize(USER_ROLES.TEACHER), getAssignmentsByClass);
+
+// API tạo bài tập essay (minh-branch)
+router.post("/classes/:classId/assessments/essay", isAuth, authorize(USER_ROLES.TEACHER), createEssayAssessment);
+
+// API cập nhật bài tập
+router.put("/classes/:classId/assessments/essay/:assessmentId", isAuth, authorize(USER_ROLES.TEACHER), updateEssayAssessment);
+
+// API xóa bài tập
+router.delete("/classes/:classId/assessments/:assessmentId", isAuth, authorize(USER_ROLES.TEACHER), deleteAssessment);
+
+// Route lấy danh sách bài nộp của một bài tập cụ thể
+router.get("/assessments/:assessmentId/submissions", isAuth, authorize(USER_ROLES.TEACHER), getSubmissionsByAssessment);
+
+// Grading routes
+router.get('/submissions/:submissionId/grading', isAuth, authorize(USER_ROLES.TEACHER), getSubmissionForGrading);
+router.post('/submissions/:submissionId/grade', isAuth, authorize(USER_ROLES.TEACHER), gradeSubmission);
+
+// AI grading
+router.post('/submissions/:submissionId/ai-grade', isAuth, authorize(USER_ROLES.TEACHER), aiGradeSubmission);
+
+// -----------------------------------------------------------------
+// Dev branch: Schedule & Material management
+// -----------------------------------------------------------------
+
 // Tất cả route dưới đây yêu cầu đăng nhập + role TEACHER
-router.use(isAuth, authorize("TEACHER"));
+router.use(isAuth, authorize(USER_ROLES.TEACHER));
 
 // ────────────── UC_TEA_06: Lịch dạy ──────────────
 
-// Danh sách lớp của GV (cho dropdown lọc) — đặt trước /:sessionId để tránh xung đột
+// Danh sách lớp của GV (cho dropdown lọc)
 router.get("/schedule/classes", scheduleCtrl.getTeacherClasses);
 
 // Lịch giảng dạy (Calendar)

@@ -1,115 +1,130 @@
+// src/controllers/studentController.js
 import { studentService } from "../services/studentService.js";
 import { validateSaveAnswer } from "../validators/studentValidator.js";
 import { successResponse } from "../utils/responseUtils.js";
 
-export const studentController = {
-    // HEAD functionalities
-    getDashboard: async (req, res, next) => {
-        try {
-            const { studentId } = req.query;
-            if (!studentId) return res.status(400).json({ success: false, message: "studentId is required" });
-            const data = await studentService.getDashboard(studentId);
-            res.status(200).json({ success: true, data });
-        } catch (error) {
-            next(error);
-        }
-    },
+// --- Minh-branch: Dashboard / Classes (lấy studentId từ req.user.id) ---
 
-    getMyClasses: async (req, res, next) => {
-        try {
-            const { studentId } = req.query;
-            if (!studentId) return res.status(400).json({ success: false, message: "studentId is required" });
-            const data = await studentService.getMyClasses(studentId);
-            res.status(200).json({ success: true, data });
-        } catch (error) {
-            next(error);
-        }
-    },
+export const getDashboard = async (req, res, next) => {
+    try {
+        const studentId = req.user.id;
+        const data = await studentService.getDashboard(studentId);
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+};
 
-    getClassDetails: async (req, res, next) => {
-        try {
-            const { studentId } = req.query;
-            if (!studentId) return res.status(400).json({ success: false, message: "studentId is required" });
-            const classId = req.params.id;
-            const data = await studentService.getClassDetails(studentId, classId);
-            res.status(200).json({ success: true, data });
-        } catch (error) {
-            next(error);
-        }
-    },
+export const getMyClasses = async (req, res, next) => {
+    try {
+        const studentId = req.user.id;
+        const data = await studentService.getMyClasses(studentId);
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+};
 
-    // nam-branch functionalities
-    // POST /api/student/quizzes/:quizId/attempts/start
-    startAttempt: async (req, res, next) => {
-        try {
-            const studentId = req.user?.id;
-            const { quizId } = req.params;
+export const getClassDetails = async (req, res, next) => {
+    try {
+        const studentId = req.user.id;
+        const classId = req.params.id;
+        const data = await studentService.getClassDetails(studentId, classId);
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+};
 
-            const data = await studentService.startOrResumeAttempt({ studentId, quizId });
-            return res.status(200).json(successResponse(data, "OK", 200));
-        } catch (e) {
-            next(e);
-        }
-    },
+// --- Minh-branch: Assignment detail & submit ---
 
-    // GET /api/student/attempts/:submissionId
-    getAttempt: async (req, res, next) => {
-        try {
-            const studentId = req.user?.id;
-            const { submissionId } = req.params;
+export const getAssignmentDetail = async (req, res, next) => {
+    try {
+        const studentId = req.user.id;
+        const data = await studentService.getAssignmentDetail(studentId, req.params.assessmentId);
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+};
 
-            const data = await studentService.getAttemptState({ studentId, submissionId });
-            return res.status(200).json(successResponse(data, "OK", 200));
-        } catch (e) {
-            next(e);
-        }
-    },
+export const submitAssignment = async (req, res, next) => {
+    try {
+        const studentId = req.user.id;
+        const data = await studentService.submitAssignment(studentId, req.params.assessmentId, req.body);
+        res.status(200).json({ success: true, message: "Thao tác nộp bài thành công", data });
+    } catch (error) {
+        next(error);
+    }
+};
 
-    // PUT /api/student/attempts/:submissionId/questions/:questionId/answer
-    saveAnswer: async (req, res, next) => {
-        try {
-            const { error, value } = validateSaveAnswer(req.body);
-            if (error) return next(error);
+// --- Dev (nam-branch) functionalities: Quiz Attempts ---
 
-            const studentId = req.user?.id;
-            const { submissionId, questionId } = req.params;
+export const startAttempt = async (req, res, next) => {
+    try {
+        const studentId = req.user?.id;
+        const { quizId } = req.params;
 
-            const data = await studentService.saveAnswer({
-                studentId,
-                submissionId,
-                questionId,
-                payload: value,
-            });
+        const data = await studentService.startOrResumeAttempt({ studentId, quizId });
+        return res.status(200).json(successResponse(data, "OK", 200));
+    } catch (e) {
+        next(e);
+    }
+};
 
-            return res.status(200).json(successResponse(data, "Saved", 200));
-        } catch (e) {
-            next(e);
-        }
-    },
+export const getAttempt = async (req, res, next) => {
+    try {
+        const studentId = req.user?.id;
+        const { submissionId } = req.params;
 
-    // GET /api/student/attempts/:submissionId/summary
-    getSummary: async (req, res, next) => {
-        try {
-            const studentId = req.user?.id;
-            const { submissionId } = req.params;
+        const data = await studentService.getAttemptState({ studentId, submissionId });
+        return res.status(200).json(successResponse(data, "OK", 200));
+    } catch (e) {
+        next(e);
+    }
+};
 
-            const data = await studentService.getAttemptSummary({ studentId, submissionId });
-            return res.status(200).json(successResponse(data, "OK", 200));
-        } catch (e) {
-            next(e);
-        }
-    },
+export const saveAnswer = async (req, res, next) => {
+    try {
+        const { error, value } = validateSaveAnswer(req.body);
+        if (error) return next(error);
 
-    // POST /api/student/attempts/:submissionId/submit
-    submitAttempt: async (req, res, next) => {
-        try {
-            const studentId = req.user?.id;
-            const { submissionId } = req.params;
+        const studentId = req.user?.id;
+        const { submissionId, questionId } = req.params;
 
-            const data = await studentService.submitAttempt({ studentId, submissionId });
-            return res.status(200).json(successResponse(data, "Submitted", 200));
-        } catch (e) {
-            next(e);
-        }
-    },
+        const data = await studentService.saveAnswer({
+            studentId,
+            submissionId,
+            questionId,
+            payload: value,
+        });
+
+        return res.status(200).json(successResponse(data, "Saved", 200));
+    } catch (e) {
+        next(e);
+    }
+};
+
+export const getSummary = async (req, res, next) => {
+    try {
+        const studentId = req.user?.id;
+        const { submissionId } = req.params;
+
+        const data = await studentService.getAttemptSummary({ studentId, submissionId });
+        return res.status(200).json(successResponse(data, "OK", 200));
+    } catch (e) {
+        next(e);
+    }
+};
+
+export const submitAttempt = async (req, res, next) => {
+    try {
+        const studentId = req.user?.id;
+        const { submissionId } = req.params;
+
+        const data = await studentService.submitAttempt({ studentId, submissionId });
+        return res.status(200).json(successResponse(data, "Submitted", 200));
+    } catch (e) {
+        next(e);
+    }
 };
