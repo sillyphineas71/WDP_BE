@@ -14,6 +14,7 @@ const formatUserResponse = (user) => {
     full_name: user.full_name,
     phone: user.phone,
     status: user.status,
+    role: user.role ? user.role.code : undefined,
     email_verified_at: user.email_verified_at,
     created_at: user.created_at,
   };
