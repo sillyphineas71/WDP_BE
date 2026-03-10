@@ -120,6 +120,15 @@ export function initModels(sequelize) {
     as: "session",
   });
 
+  ClassSession.hasMany(Material, {
+    foreignKey: "session_id",
+    as: "materials",
+  });
+  Material.belongsTo(ClassSession, {
+    foreignKey: "session_id",
+    as: "session",
+  });
+
   // Assessment associations
   Assessment.hasMany(AssessmentFile, {
     foreignKey: "assessment_id",
@@ -229,3 +238,27 @@ export function initModels(sequelize) {
     Notification,
   };
 }
+import sequelize from "../config/database.js";
+export {
+  sequelize,
+  Role,
+  User,
+  PasswordResetToken,
+  Course,
+  Class,
+  Enrollment,
+  ClassSession,
+  AttendanceRecord,
+  Material,
+  Assessment,
+  AssessmentFile,
+  QuizQuestion,
+  QuizOption,
+  ImportJob,
+  ImportRow,
+  Submission,
+  SubmissionAnswer,
+  SubmissionFile,
+  Grade,
+  Notification,
+};

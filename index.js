@@ -3,7 +3,10 @@ import "dotenv/config";
 import sequelize from "./src/config/database.js";
 import { initModels } from "./src/models/index.js";
 import authRoutes from "./src/routes/authRoutes.js";
+import userRoutes from "./src/routes/userRoutes.js";
+import adminCollectiveRoutes from "./src/routes/adminCollectiveRoutes.js";
 import adminRoutes from "./src/routes/adminRoutes.js";
+import teacherRoutes from "./src/routes/teacherRoutes.js";
 import studentRoutes from "./src/routes/studentRoutes.js";
 import { errorHandler } from "./src/middleware/errorHandler.js";
 
@@ -13,6 +16,9 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve uploaded files as static assets
+app.use("/uploads", express.static("uploads"));
 
 // CORS middleware
 app.use((req, res, next) => {
@@ -37,8 +43,8 @@ async function initializeDatabase() {
   try {
     initModels(sequelize);
     await sequelize.authenticate();
+
     // await sequelize.sync({ alter: true });
-  
     console.log("✓ Database connection established");
   } catch (error) {
     console.error("✗ Database connection failed:", error.message);
@@ -47,9 +53,13 @@ async function initializeDatabase() {
 }
 
 // Routes
-app.use("/api/admin", adminRoutes);
+// Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/v1/admin", adminCollectiveRoutes);
+app.use("/api/admin", adminRoutes);
 app.use("/api/student", studentRoutes);
+app.use("/api/teacher", teacherRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {

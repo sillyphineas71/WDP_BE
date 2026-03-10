@@ -1,14 +1,11 @@
 import { User } from "../models/User.js";
 import { Role } from "../models/Role.js";
-import { hashPassword, comparePassword } from "../utils/passwordUtils.js";
-import {
-  ConflictError,
-  NotFoundError,
-  UnauthorizedError,
-} from "../errors/AppError.js";
+import { comparePassword } from "../utils/passwordUtils.js";
+import { UnauthorizedError } from "../errors/AppError.js";
 import { ERROR_MESSAGES } from "../constants/messages.js";
 import { USER_ROLES } from "../constants/roles.js";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 
 const formatUserResponse = (user) => {
   return {
@@ -17,6 +14,8 @@ const formatUserResponse = (user) => {
     full_name: user.full_name,
     phone: user.phone,
     status: user.status,
+    role: user.role ? user.role.code : undefined,
+    email_verified_at: user.email_verified_at,
     created_at: user.created_at,
   };
 };
@@ -35,40 +34,7 @@ const generateToken = (user, role) => {
   return token;
 };
 
-export const registerStudent = async (userData) => {
-  // Check if email already exists
-  const existingUser = await User.findOne({
-    where: { email: userData.email },
-  });
-
-  if (existingUser) {
-    throw new ConflictError(ERROR_MESSAGES.EMAIL_ALREADY_EXISTS);
-  }
-
-  // Get student role
-  const studentRole = await Role.findOne({
-    where: { code: "STUDENT" },
-  });
-
-  if (!studentRole) {
-    throw new NotFoundError(ERROR_MESSAGES.STUDENT_ROLE_NOT_FOUND);
-  }
-
-  // Hash password
-  const hashedPassword = await hashPassword(userData.password);
-
-  // Create user
-  const user = await User.create({
-    email: userData.email,
-    password_hash: hashedPassword,
-    full_name: userData.full_name,
-    phone: userData.phone || null,
-    role_id: studentRole.id,
-  });
-
-  // Return user without password
-  return formatUserResponse(user);
-};
+const sha256 = (s) => crypto.createHash("sha256").update(s).digest("hex");
 
 export const loginUser = async (userData) => {
   // Find user by email
@@ -92,6 +58,8 @@ export const loginUser = async (userData) => {
   if (user.status === "blocked") {
     throw new UnauthorizedError(ERROR_MESSAGES.USER_BLOCKED);
   }
+
+
 
   // Compare password
   const passwordMatch = await comparePassword(
