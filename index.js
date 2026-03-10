@@ -6,7 +6,8 @@ import authRoutes from "./src/routes/authRoutes.js";
 import userRoutes from "./src/routes/userRoutes.js";
 import adminCollectiveRoutes from "./src/routes/adminCollectiveRoutes.js";
 import adminRoutes from "./src/routes/adminRoutes.js";
-import studentRoutes from "./src/routes/studentRoutes.js";
+import teacherRoutes from "./src/routes/teacherRoutes.js";
+import studentRoutes from "./src/routes/studentRoutes.js"
 import { errorHandler } from "./src/middleware/errorHandler.js";
 
 const app = express();
@@ -40,7 +41,6 @@ async function initializeDatabase() {
     initModels(sequelize);
     await sequelize.authenticate();
     // await sequelize.sync({ alter: true });
-
     console.log("✓ Database connection established");
   } catch (error) {
     console.error("✗ Database connection failed:", error.message);
@@ -54,9 +54,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/v1/admin", adminCollectiveRoutes);
 app.use("/api/admin", adminRoutes);
-app.use("/api/auth", authRoutes);
 app.use("/api/student", studentRoutes);
-
+app.use("/api/teacher", teacherRoutes);
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "Smart Edu LMS API is running" });
