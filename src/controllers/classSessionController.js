@@ -40,3 +40,11 @@ export const cancelManualClassSession = async (req, res, next) => {
     next(e);
   }
 };
+export const getClassSessions = async (req, res, next) => {
+  try {
+    const data = await service.listClassSessions(req.query);
+    res.status(200).json({ message: "OK", ...data });
+  } catch (e) {
+    next(e);
+  }
+};

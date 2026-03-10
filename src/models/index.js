@@ -120,6 +120,15 @@ export function initModels(sequelize) {
     as: "session",
   });
 
+  ClassSession.hasMany(Material, {
+    foreignKey: "session_id",
+    as: "materials",
+  });
+  Material.belongsTo(ClassSession, {
+    foreignKey: "session_id",
+    as: "session",
+  });
+
   // Assessment associations
   Assessment.hasMany(AssessmentFile, {
     foreignKey: "assessment_id",
