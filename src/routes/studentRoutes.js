@@ -72,13 +72,13 @@ router.post(
 // ────────────── UC_STU_08: Xem/Tải tài liệu ──────────────
 
 // Danh sách tài liệu của lớp (chỉ visible)
-router.get("/classes/:classId/materials", materialCtrl.getClassMaterials);
+router.get("/classes/:classId/materials", isAuth, authorize("STUDENT"), materialCtrl.getClassMaterials);
 
 // Chi tiết tài liệu
-router.get("/materials/:materialId", materialCtrl.getMaterialDetail);
+router.get("/materials/:materialId", isAuth, authorize("STUDENT"), materialCtrl.getMaterialDetail);
 
 // Download / redirect URL
-router.get("/materials/:materialId/download", materialCtrl.downloadMaterial);
+router.get("/materials/:materialId/download", isAuth, authorize("STUDENT"), materialCtrl.downloadMaterial);
 
 
 export default router;

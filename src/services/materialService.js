@@ -1,14 +1,12 @@
 // src/services/materialService.js
 import { Op } from "sequelize";
-import fs from "fs";
-import path from "path";
 import {
   Material,
   Class,
   Course,
   ClassSession,
 } from "../models/index.js";
-import { getTypeFromFilename } from "../middleware/uploadMiddleware.js";
+import { getTypeFromFilename, getPublicIdFromUrl, cloudinary } from "../middleware/uploadMiddleware.js";
 
 // ────────────────────────────────────────────
 // Helpers
@@ -265,7 +263,7 @@ export const uploadMaterial = async (teacherId, classId, body, file) => {
   let materialData;
 
   if (file) {
-    // ── Upload file ──
+    // ── Upload file → Cloudinary ──
     const materialType = getTypeFromFilename(file.originalname);
 
     materialData = {
@@ -275,9 +273,9 @@ export const uploadMaterial = async (teacherId, classId, body, file) => {
       type: materialType,
       title: String(title).trim(),
       description: description ? String(description).trim() : null,
-      file_url: `/${file.path.replace(/\\/g, "/")}`, // normalize path separator
+      file_url: file.path, // Cloudinary public URL
       original_filename: file.originalname,
-      file_size: file.size,
+      file_size: file.size || null,
       is_visible: true,
     };
   } else {
@@ -411,22 +409,21 @@ export const toggleVisibility = async (teacherId, materialId) => {
 // ────────────────────────────────────────────
 
 /**
- * Xóa tài liệu: xóa file vật lý (nếu type !== link) + xóa record DB (A3).
+ * Xóa tài liệu: xóa file trên Cloudinary (nếu type !== link) + xóa record DB (A3).
  */
 export const deleteMaterial = async (teacherId, materialId) => {
   const material = await verifyTeacherOwnsMaterial(teacherId, materialId);
 
-  // Xóa file vật lý nếu đây là file upload (không phải link)
+  // Xóa file trên Cloudinary nếu đây là file upload (không phải link)
   if (material.type !== "link" && material.file_url) {
     try {
-      // file_url dạng "/uploads/materials/xxx.pdf" → cần bỏ "/" đầu
-      const filePath = path.resolve(material.file_url.replace(/^\//, ""));
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      const publicId = getPublicIdFromUrl(material.file_url);
+      if (publicId) {
+        await cloudinary.uploader.destroy(publicId, { resource_type: "raw" });
       }
-    } catch (fsErr) {
-      // Nếu file không tồn tại hoặc lỗi fs → vẫn tiếp tục xóa DB record
-      console.warn(`Cảnh báo: Không thể xóa file vật lý: ${fsErr.message}`);
+    } catch (cloudErr) {
+      // Nếu xóa Cloudinary lỗi → vẫn tiếp tục xóa DB record
+      console.warn(`Cảnh báo: Không thể xóa file trên Cloudinary: ${cloudErr.message}`);
     }
   }
 
