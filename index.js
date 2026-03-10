@@ -3,6 +3,7 @@ import "dotenv/config";
 import sequelize from "./src/config/database.js";
 import { initModels } from "./src/models/index.js";
 import authRoutes from "./src/routes/authRoutes.js";
+import userRoutes from "./src/routes/userRoutes.js";
 import adminCollectiveRoutes from "./src/routes/adminCollectiveRoutes.js";
 import adminRoutes from "./src/routes/adminRoutes.js";
 import studentRoutes from "./src/routes/studentRoutes.js";
@@ -48,7 +49,9 @@ async function initializeDatabase() {
 }
 
 // Routes
+// Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
 app.use("/api/v1/admin", adminCollectiveRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/auth", authRoutes);
