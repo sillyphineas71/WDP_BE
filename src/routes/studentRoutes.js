@@ -1,9 +1,6 @@
 
 import express from "express";
 import {
-    getDashboard,
-    getMyClasses,
-    getClassDetails,
     studentController
 } from "../controllers/studentController.js";
 import { isAuth, authorize } from "../middleware/isAuth.js";
