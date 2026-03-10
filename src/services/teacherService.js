@@ -21,6 +21,7 @@ export const teacherService = {
             include: [
                 {
                     model: Course,
+                    as: "course",
                     attributes: ["name"]
                 }
             ],
@@ -30,7 +31,7 @@ export const teacherService = {
         return classes.map(c => ({
             id: c.id,
             name: c.name,
-            courseName: c.Course?.name,
+            courseName: c.course?.name,
             startDate: c.start_date,
             endDate: c.end_date,
             status: c.status
