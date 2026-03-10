@@ -12,30 +12,20 @@ export function initSubmission(sequelize) {
         defaultValue: () => uuidv4(),
       },
       assessment_id: { type: DataTypes.UUID, allowNull: false },
-      user_id: { type: DataTypes.UUID, allowNull: false },
-      submitted_at: { type: DataTypes.DATE },
-      is_late: { type: DataTypes.BOOLEAN, defaultValue: false },
-      score: { type: DataTypes.DECIMAL(5, 2) },
-      feedback: { type: DataTypes.TEXT },
-      graded_by: { type: DataTypes.UUID },
-      graded_at: { type: DataTypes.DATE },
-      submission_status: {
-        type: DataTypes.ENUM("pending", "submitted", "graded"),
-        defaultValue: "pending",
+      student_id: { type: DataTypes.UUID, allowNull: false },
+      attempt_no: { type: DataTypes.INTEGER, defaultValue: 1 },
+      status: { 
+        type: DataTypes.STRING, // Khớp với kiểu submission_status trong DB
+        defaultValue: "submitted" 
       },
+      started_at: { type: DataTypes.DATE },
+      submitted_at: { type: DataTypes.DATE },
+      content_text: { type: DataTypes.TEXT },
     },
     {
       sequelize,
       tableName: "submissions",
-      timestamps: true,
-      createdAt: "created_at",
-      updatedAt: "updated_at",
-      indexes: [
-        { name: "idx_submissions_assessment", fields: ["assessment_id"] },
-        { name: "idx_submissions_user", fields: ["user_id"] },
-      ],
-    },
+      timestamps: false, // Bảng của bạn không thấy có created_at/updated_at trong ảnh
+    }
   );
 }
-
-export default Submission;
