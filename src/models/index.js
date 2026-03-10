@@ -60,14 +60,14 @@ export function initModels(sequelize) {
   User.hasMany(Class, { foreignKey: "teacher_id", as: "taughtClasses" });
   Class.belongsTo(User, { foreignKey: "teacher_id", as: "teacher" });
 
-  User.hasMany(Enrollment, { foreignKey: "student_id", as: "enrollments" });
-  Enrollment.belongsTo(User, { foreignKey: "student_id", as: "student" });
+  User.hasMany(Enrollment, { foreignKey: "user_id", as: "enrollments" });
+  Enrollment.belongsTo(User, { foreignKey: "user_id", as: "student" });
 
   User.hasMany(AttendanceRecord, {
-    foreignKey: "student_id",
+    foreignKey: "user_id",
     as: "attendanceRecords",
   });
-  AttendanceRecord.belongsTo(User, { foreignKey: "student_id", as: "student" });
+  AttendanceRecord.belongsTo(User, { foreignKey: "user_id", as: "student" });
 
   User.hasMany(AttendanceRecord, {
     foreignKey: "marked_by",
@@ -78,11 +78,17 @@ export function initModels(sequelize) {
   User.hasMany(ImportJob, { foreignKey: "created_by", as: "importJobs" });
   ImportJob.belongsTo(User, { foreignKey: "created_by", as: "creator" });
 
-  User.hasMany(Submission, { foreignKey: "student_id", as: "submissions" });
-  Submission.belongsTo(User, { foreignKey: "student_id", as: "student" });
+  User.hasMany(Submission, { foreignKey: "user_id", as: "submissions" });
+  Submission.belongsTo(User, { foreignKey: "user_id", as: "student" });
 
-  User.hasMany(Grade, { foreignKey: "graded_by", as: "gradedByMe" });
-  Grade.belongsTo(User, { foreignKey: "graded_by", as: "gradedByUser" });
+  User.hasMany(Submission, {
+    foreignKey: "graded_by",
+    as: "gradedSubmissions",
+  });
+  Submission.belongsTo(User, { foreignKey: "graded_by", as: "grader" });
+
+  // User.hasMany(Grade, { foreignKey: "graded_by", as: "gradedByMe" });
+  // Grade.belongsTo(User, { foreignKey: "graded_by", as: "gradedByUser" });
 
   User.hasMany(Notification, { foreignKey: "user_id", as: "notifications" });
   Notification.belongsTo(User, { foreignKey: "user_id", as: "user" });
@@ -110,6 +116,15 @@ export function initModels(sequelize) {
     as: "attendanceRecords",
   });
   AttendanceRecord.belongsTo(ClassSession, {
+    foreignKey: "session_id",
+    as: "session",
+  });
+
+  ClassSession.hasMany(Material, {
+    foreignKey: "session_id",
+    as: "materials",
+  });
+  Material.belongsTo(ClassSession, {
     foreignKey: "session_id",
     as: "session",
   });
@@ -188,10 +203,16 @@ export function initModels(sequelize) {
   });
 
   // Grade associations
-  Submission.hasOne(Grade, { foreignKey: "submission_id", as: "grade" });
-  Grade.belongsTo(Submission, {
-    foreignKey: "submission_id",
-    as: "submission",
+  User.hasMany(Grade, { foreignKey: "user_id", as: "grades" });
+  Grade.belongsTo(User, { foreignKey: "user_id", as: "student" });
+
+  User.hasMany(Grade, { foreignKey: "graded_by", as: "gradedByMe" });
+  Grade.belongsTo(User, { foreignKey: "graded_by", as: "gradedByUser" });
+
+  Assessment.hasMany(Grade, { foreignKey: "assessment_id", as: "grades" });
+  Grade.belongsTo(Assessment, {
+    foreignKey: "assessment_id",
+    as: "assessment",
   });
 
   return {

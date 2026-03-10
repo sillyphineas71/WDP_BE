@@ -11,38 +11,22 @@ export function initGrade(sequelize) {
         primaryKey: true,
         defaultValue: () => uuidv4(),
       },
-      submission_id: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        unique: true,
-      },
-      ai_score_draft: { type: DataTypes.DECIMAL(5, 2) },
-      ai_feedback_json: { type: DataTypes.JSON },
-      final_score: { type: DataTypes.DECIMAL(5, 2) },
-      final_feedback: { type: DataTypes.TEXT },
+      submission_id: { type: DataTypes.UUID, allowNull: false },
+      ai_score_draft: { type: DataTypes.DECIMAL(6, 2) },
+      ai_feedback_json: { type: DataTypes.JSONB },
+      final_score: { type: DataTypes.DECIMAL(6, 2) }, // Đây là cột score của bạn
+      final_feedback: { type: DataTypes.TEXT },      // Đây là cột feedback của bạn
       graded_by: { type: DataTypes.UUID },
       graded_at: { type: DataTypes.DATE },
-      status: {
-        type: DataTypes.ENUM("ai_drafted", "finalized"),
-        allowNull: false,
-        defaultValue: "ai_drafted",
-      },
-      is_published: {
-        type: DataTypes.BOOLEAN,
-        allowNull: false,
-        defaultValue: false,
-      },
+      status: { type: DataTypes.STRING }, // grade_status
+      is_published: { type: DataTypes.BOOLEAN, defaultValue: false },
       published_at: { type: DataTypes.DATE },
     },
     {
       sequelize,
       tableName: "grades",
       timestamps: false,
-      indexes: [
-        { name: "idx_grades_submission", fields: ["submission_id"] },
-        { name: "idx_grades_graded_by", fields: ["graded_by"] },
-      ],
-    },
+    }
   );
 }
 

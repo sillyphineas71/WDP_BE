@@ -13,35 +13,19 @@ export function initSubmission(sequelize) {
       },
       assessment_id: { type: DataTypes.UUID, allowNull: false },
       student_id: { type: DataTypes.UUID, allowNull: false },
-      attempt_no: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        defaultValue: 1,
+      attempt_no: { type: DataTypes.INTEGER, defaultValue: 1 },
+      status: { 
+        type: DataTypes.STRING, // Khớp với kiểu submission_status trong DB
+        defaultValue: "submitted" 
       },
-      status: {
-        type: DataTypes.ENUM("in_progress", "submitted", "graded"),
-        allowNull: false,
-        defaultValue: "in_progress",
-      },
-      started_at: { type: DataTypes.DATE, allowNull: false },
+      started_at: { type: DataTypes.DATE },
       submitted_at: { type: DataTypes.DATE },
       content_text: { type: DataTypes.TEXT },
     },
     {
       sequelize,
       tableName: "submissions",
-      timestamps: false,
-      indexes: [
-        { name: "idx_submissions_assessment", fields: ["assessment_id"] },
-        { name: "idx_submissions_student", fields: ["student_id"] },
-        {
-          name: "idx_submissions_assessment_student_attempt",
-          fields: ["assessment_id", "student_id", "attempt_no"],
-          unique: true,
-        },
-      ],
-    },
+      timestamps: false, // Bảng của bạn không thấy có created_at/updated_at trong ảnh
+    }
   );
 }
-
-export default Submission;

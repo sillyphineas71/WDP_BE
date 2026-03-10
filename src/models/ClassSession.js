@@ -21,9 +21,11 @@ export function initClassSession(sequelize) {
         allowNull: false,
         defaultValue: "scheduled",
       },
+      cancelled_at: { type: DataTypes.DATE, allowNull: true, defaultValue: null },
+      cancelled_reason: { type: DataTypes.TEXT, allowNull: true, defaultValue: null },
     },
     {
-      sequelize,
+      sequelize,      
       tableName: "class_sessions",
       timestamps: false,
       indexes: [{ name: "idx_class_sessions_class", fields: ["class_id"] }],

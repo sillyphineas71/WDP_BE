@@ -5,5 +5,5 @@ const router = express.Router();
 
 router.put("/:sessionId/manual", controller.updateManualClassSession);
 router.patch("/:sessionId/cancel", controller.cancelManualClassSession);
-
+router.get("/", controller.getClassSessions);
 export default router;
