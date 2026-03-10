@@ -1,5 +1,5 @@
 import { teacherService } from "../services/teacherService.js";
-import { validateCreateQuiz, validateCreateAssignment } from "../validators/teacherValidator.js";
+import { validateCreateQuiz, validateCreateAssignment, validatePublishGrades } from "../validators/teacherValidator.js";
 import { successResponse } from "../utils/responseUtils.js";
 
 export const teacherController = {
@@ -80,6 +80,35 @@ export const teacherController = {
             return res
                 .status(201)
                 .json(successResponse(data, "Assignment created successfully", 201));
+
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    /**
+     * PUT /api/teacher/classes/:classId/assessments/:assessmentId/grades/publish
+     * UC_TEA_15: Công bố điểm
+     */
+    publishGrades: async (req, res, next) => {
+        try {
+            const teacherId = req.user?.id;
+            const { classId, assessmentId } = req.params;
+
+            // Validate
+            const { error, value } = validatePublishGrades(req.body);
+            if (error) return next(error);
+
+            const data = await teacherService.publishAssessmentGrades(
+                teacherId,
+                classId,
+                assessmentId,
+                value.is_published
+            );
+
+            return res
+                .status(200)
+                .json(successResponse(data, data.message, 200));
 
         } catch (err) {
             next(err);

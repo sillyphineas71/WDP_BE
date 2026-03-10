@@ -4,6 +4,7 @@ import { isAuth, authorize } from "../middleware/isAuth.js";
 import * as scheduleCtrl from "../controllers/teacherScheduleController.js";
 import * as materialCtrl from "../controllers/materialController.js";
 import { uploadSingleFile } from "../middleware/uploadMiddleware.js";
+
 const router = express.Router();
 
 // UC_TEA_08: Teacher tạo quiz
@@ -22,12 +23,28 @@ router.post(
   teacherController.createAssignment,
 );
 
+// Lấy danh sách lớp của giáo viên
 router.get(
   "/teacher/classes",
-  // authorize("TEACHER"),
   isAuth,
   authorize("TEACHER"),
-  teacherController.getMyClasses
+  teacherController.getMyClasses,
+);
+
+// Giữ thêm route cũ để không mất code / không vỡ FE cũ nếu đang dùng
+router.get(
+  "/classes",
+  isAuth,
+  authorize("TEACHER"),
+  teacherController.getMyClasses,
+);
+
+// UC_TEA_15: Công bố điểm (Publish grades)
+router.put(
+  "/classes/:classId/assessments/:assessmentId/grades/publish",
+  isAuth,
+  authorize("TEACHER"),
+  teacherController.publishGrades,
 );
 
 // Tất cả route dưới đây yêu cầu đăng nhập + role TEACHER
