@@ -81,11 +81,14 @@ export function initModels(sequelize) {
   User.hasMany(Submission, { foreignKey: "user_id", as: "submissions" });
   Submission.belongsTo(User, { foreignKey: "user_id", as: "student" });
 
-  User.hasMany(Submission, { foreignKey: "graded_by", as: "gradedSubmissions" });
+  User.hasMany(Submission, {
+    foreignKey: "graded_by",
+    as: "gradedSubmissions",
+  });
   Submission.belongsTo(User, { foreignKey: "graded_by", as: "grader" });
 
-  User.hasMany(Grade, { foreignKey: "graded_by", as: "gradedByMe" });
-  Grade.belongsTo(User, { foreignKey: "graded_by", as: "gradedByUser" });
+  // User.hasMany(Grade, { foreignKey: "graded_by", as: "gradedByMe" });
+  // Grade.belongsTo(User, { foreignKey: "graded_by", as: "gradedByUser" });
 
   User.hasMany(Notification, { foreignKey: "user_id", as: "notifications" });
   Notification.belongsTo(User, { foreignKey: "user_id", as: "user" });
@@ -198,7 +201,10 @@ export function initModels(sequelize) {
   Grade.belongsTo(User, { foreignKey: "graded_by", as: "gradedByUser" });
 
   Assessment.hasMany(Grade, { foreignKey: "assessment_id", as: "grades" });
-  Grade.belongsTo(Assessment, { foreignKey: "assessment_id", as: "assessment" });
+  Grade.belongsTo(Assessment, {
+    foreignKey: "assessment_id",
+    as: "assessment",
+  });
 
   return {
     Role,
