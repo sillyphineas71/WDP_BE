@@ -14,6 +14,7 @@ const formatUserResponse = (user) => {
     full_name: user.full_name,
     phone: user.phone,
     status: user.status,
+    role: user.role?.code || null,
     email_verified_at: user.email_verified_at,
     created_at: user.created_at,
   };
@@ -58,9 +59,7 @@ export const loginUser = async (userData) => {
     throw new UnauthorizedError(ERROR_MESSAGES.USER_BLOCKED);
   }
 
-  if (user.role?.code === "STUDENT" && !user.email_verified_at) {
-    throw new UnauthorizedError(ERROR_MESSAGES.EMAIL_NOT_VERIFIED);
-  }
+
 
   // Compare password
   const passwordMatch = await comparePassword(
