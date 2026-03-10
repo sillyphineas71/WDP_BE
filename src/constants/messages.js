@@ -12,8 +12,6 @@ export const VALIDATION_MESSAGES = {
 export const SUCCESS_MESSAGES = {
   LOGIN_SUCCESS: "Login successful",
   USER_CREATED: "User created successfully",
-  EMAIL_VERIFIED: "Email verified successfully",
-  VERIFICATION_CODE_SENT: "Verification code sent",
   LOGOUT_SUCCESS: "Logout successful",
   PROFILE_UPDATED: "Profile updated successfully",
   PASSWORD_CHANGED: "Password changed successfully",
@@ -29,7 +27,4 @@ export const ERROR_MESSAGES = {
   INVALID_TOKEN: "Invalid or expired token",
   TOKEN_REQUIRED: "Token is required",
   UNAUTHORIZED: "Unauthorized access",
-  EMAIL_ALREADY_VERIFIED: "Email is already verified",
-  EMAIL_NOT_VERIFIED: "Email is not verified",
-  INVALID_VERIFY_CODE: "Invalid or expired verification code",
 };
