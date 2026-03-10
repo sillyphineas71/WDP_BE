@@ -94,3 +94,13 @@ export const createAssignmentSchema = Joi.object({
 
 export const validateCreateAssignment = (data) =>
     createAssignmentSchema.validate(data, { abortEarly: false, stripUnknown: true });
+
+export const publishGradesSchema = Joi.object({
+    is_published: Joi.boolean().required().messages({
+        "any.required": "Trạng thái công bố (is_published) là bắt buộc",
+        "boolean.base": "Trạng thái công bố phải là true hoặc false"
+    })
+});
+
+export const validatePublishGrades = (data) =>
+    publishGradesSchema.validate(data, { abortEarly: false, stripUnknown: true });

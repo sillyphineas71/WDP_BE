@@ -177,6 +177,65 @@ export const teacherService = {
             classId,
             next: `/teacher/classes/${classId}/assignments/${assignment.id}`
         };
+    },
+
+    /**
+     * UC_TEA_15: Publish or Unpublish Grades for an Assessment
+     */
+    publishAssessmentGrades: async (teacherId, classId, assessmentId, isPublished) => {
+        // 1️⃣ Check class exists and teacher ownership
+        const clazz = await Class.findByPk(classId);
+
+        if (!clazz) {
+            throw new NotFoundError("Class not found");
+        }
+
+        if (String(clazz.teacher_id) !== String(teacherId)) {
+            throw new AppError(
+                "Forbidden: not owner teacher of this class",
+                403
+            );
+        }
+
+        // 2️⃣ Check assessment belongs to class
+        const assessment = await Assessment.findOne({
+            where: { id: assessmentId, class_id: classId }
+        });
+
+        if (!assessment) {
+            throw new NotFoundError("Assessment not found in this class");
+        }
+
+        // 3️⃣ Update grades (Assuming Grade model is imported, need to import it at the top or use sequelize)
+        // We need to update grades associated with submissions of this assessment
+        const { Grade, Submission } = require("../models/index.js");
+
+        const updateData = {
+            is_published: isPublished,
+            published_at: isPublished ? new Date() : null
+        };
+
+        // Find all submissions for this assessment
+        const submissions = await Submission.findAll({
+            where: { assessment_id: assessmentId },
+            attributes: ["id"]
+        });
+
+        const submissionIds = submissions.map(s => s.id);
+
+        if (submissionIds.length === 0) {
+            throw new AppError("No submissions found for this assessment to publish grades for", 400);
+        }
+
+        // Update grades
+        const [updatedRowCount] = await Grade.update(updateData, {
+            where: { submission_id: submissionIds }
+        });
+
+        return {
+            message: `Successfully ${isPublished ? 'published' : 'unpublished'} grades.`,
+            updatedCount: updatedRowCount
+        };
     }
 
 };

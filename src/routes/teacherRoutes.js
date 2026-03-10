@@ -21,11 +21,19 @@ router.post(
 );
 
 router.get(
-    "/teacher/classes",
+    "/classes",
     // authorize("TEACHER"),
     isAuth,
     authorize("TEACHER"),
     teacherController.getMyClasses
+);
+
+// UC_TEA_15: Công bố điểm (Publish grades)
+router.put(
+    "/classes/:classId/assessments/:assessmentId/grades/publish",
+    isAuth,
+    authorize("TEACHER"),
+    teacherController.publishGrades
 );
 
 export default router;
