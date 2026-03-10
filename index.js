@@ -52,8 +52,8 @@ async function initializeDatabase() {
 app.use("/api/auth", authRoutes);
 app.use("/api/v1/admin", adminCollectiveRoutes);
 app.use("/api/admin", adminRoutes);
-app.use("/api/students", studentRoutes); // <-- Đã sửa thành students
-app.use("/api/teachers", teacherRoutes);
+app.use("/api/student", studentRoutes); 
+app.use("/api/teacher", teacherRoutes);
 app.use("/api/upload", uploadRoutes); 
 
 // Health check

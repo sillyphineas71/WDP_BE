@@ -9,6 +9,8 @@ import { Grade } from "../models/Grade.js";
 import { User } from "../models/User.js";
 import { ConflictError, NotFoundError } from "../errors/AppError.js";
 import sequelize from "../config/database.js";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import mammoth from "mammoth"; 
 
 export const teacherService = {
   createEssayAssessment: async (teacherId, classId, data) => {
@@ -141,38 +143,62 @@ export const teacherService = {
     return await assessment.destroy();
   },
 
-  getSubmissionsByAssessment: async (teacherId, assessmentId) => {
-    const assessment = await Assessment.findByPk(assessmentId, {
-        include: [{ model: Class, as: 'class' }]
-    });
+getSubmissionsByAssessment: async (teacherId, assessmentId) => {
+    // 1. Lấy thông tin bài tập (Lấy thêm Course để hiển thị tên môn học)
+const assessment = await Assessment.findByPk(assessmentId, {
+    include: [
+        { 
+            model: Class, 
+            as: 'class',
+            // include: [{ model: Course, as: 'course' }] 
+        },
+        {
+            model: AssessmentFile,
+            as: 'files',
+            attributes: ['id', 'file_url', 'original_name']
+        }
+    ]
+});
+    
     if (!assessment || assessment.class.teacher_id !== teacherId) {
         throw new NotFoundError("Không tìm thấy bài tập.");
     }
 
-    return await Submission.findAll({
+    // 2. Lấy danh sách bài nộp
+    const submissions = await Submission.findAll({
         where: { assessment_id: assessmentId },
         include: [
-            { 
-                model: User, 
-                as: 'student', 
-                attributes: ['id', 'full_name', 'email', 'avatar_url'] 
-            },
-            // THÊM ĐOẠN NÀY ĐỂ BACKEND GỬI KÈM ĐIỂM SỐ
-            {
-                model: Grade,
-                as: 'grade',
-                attributes: ['final_score', 'is_published']
-            }
+            { model: User, as: 'student', attributes: ['id', 'full_name', 'email', 'avatar_url'] },
+            { model: Grade, as: 'grade', attributes: ['final_score', 'is_published'] }
         ],
         order: [['submitted_at', 'DESC']]
     });
+
+    // 3. Xử lý logic nộp muộn
+    const processedSubmissions = submissions.map(sub => {
+        const subJson = sub.toJSON(); 
+        if (
+            subJson.status === 'submitted' && 
+            assessment.due_at && 
+            new Date(subJson.submitted_at) > new Date(assessment.due_at)
+        ) {
+            subJson.status = 'submitted_late';
+        }
+        return subJson;
+    });
+
+    // 4. TRẢ VỀ CẢ THÔNG TIN BÀI TẬP VÀ DANH SÁCH BÀI NỘP
+    return {
+        assessment: assessment,
+        submissions: processedSubmissions
+    };
   },
 
   // ==========================================
-  // CÁC HÀM CHẤM ĐIỂM (Đã được tách ra độc lập)
+  // CÁC HÀM CHẤM ĐIỂM 
   // ==========================================
 
-getSubmissionForGrading: async (submissionId) => {
+  getSubmissionForGrading: async (submissionId) => {
     const submission = await Submission.findByPk(submissionId, {
         include: [
             { 
@@ -192,9 +218,7 @@ getSubmissionForGrading: async (submissionId) => {
             {
                 model: Assessment,
                 as: 'assessment',
-                // ĐÃ FIX: Xóa chữ 'files' ra khỏi mảng attributes
-                attributes: ['id', 'title', 'max_score'], 
-                // THÊM VÀO ĐÂY: Dùng include để lấy file đề bài từ bảng AssessmentFile
+                attributes: ['id', 'title', 'max_score', 'instructions', 'due_at'],
                 include: [{
                     model: AssessmentFile,
                     as: 'files',
@@ -251,5 +275,113 @@ getSubmissionForGrading: async (submissionId) => {
         attempt_no: submission.attempt_no + 1 
     });
     return submission;
+  },
+
+  aiGradeSubmission: async (submissionId) => {
+    // 1. Lấy thông tin bài nộp, bao gồm file sinh viên VÀ file đề bài của giáo viên
+    const submission = await Submission.findByPk(submissionId, {
+        include: [
+            { 
+                model: Assessment, 
+                as: 'assessment', 
+                attributes: ['title', 'instructions', 'max_score'],
+                // BỔ SUNG: Lấy thêm file đề bài của giáo viên
+                include: [{ model: AssessmentFile, as: 'files', attributes: ['file_url', 'original_name'] }] 
+            },
+            { 
+                model: SubmissionFile, 
+                as: 'files', 
+                attributes: ['file_url', 'original_name', 'mime_type'] 
+            }
+        ]
+    });
+
+    if (!submission) throw new Error("Không tìm thấy bài nộp.");
+
+    // 2. Khởi tạo Gemini AI
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ 
+        model: "gemini-2.5-flash-lite", // Dùng bản 1.5 flash hoặc 2.5 flash lite đều tốt
+        generationConfig: { responseMimeType: "application/json" } 
+    });
+
+    // 3. Chuẩn bị mảng dữ liệu gửi cho Gemini (Hỗ trợ nhét chữ và file xen kẽ nhau)
+    let requestData = [];
+
+    // Lời nhắc hệ thống (Mở đầu)
+    requestData.push(`Bạn là một giảng viên đại học khó tính nhưng công tâm đang chấm bài tập.
+    - Tiêu đề bài tập: "${submission.assessment.title}"
+    - Hướng dẫn cơ bản: "${submission.assessment.instructions || 'Không có yêu cầu thêm'}"
+    - Thang điểm tối đa: ${submission.assessment.max_score}
+    - Lời nhắn của sinh viên khi nộp: "${submission.content_text || 'Không có'}"\n`);
+
+    // HÀM HỖ TRỢ XỬ LÝ FILE DÀNH CHUNG CHO CẢ GIÁO VIÊN & SINH VIÊN
+    const processFile = async (fileObj, roleLabel) => {
+        try {
+            const fileName = fileObj.original_name.toLowerCase();
+            const response = await fetch(fileObj.file_url);
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+
+            // NẾU LÀ DOCX: Bóc tách text bằng mammoth
+            if (fileName.endsWith('.docx')) {
+                const result = await mammoth.extractRawText({ buffer: buffer });
+                requestData.push(`\n--- [NỘI DUNG TEXT TỪ ${roleLabel}: ${fileObj.original_name}] ---\n${result.value}\n`);
+            } 
+            // NẾU LÀ PDF, PNG, JPG: Nhét trực tiếp vào dạng InlineData cho Gemini đọc
+            else if (fileName.endsWith('.pdf') || fileName.endsWith('.png') || fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+                let mimeType = fileName.endsWith('.pdf') ? "application/pdf" : (fileName.endsWith('.png') ? "image/png" : "image/jpeg");
+                requestData.push(`\n--- [FILE TÀI LIỆU TỪ ${roleLabel}: ${fileObj.original_name}] ---`);
+                requestData.push({
+                    inlineData: { data: buffer.toString("base64"), mimeType: mimeType }
+                });
+            } else {
+                 console.log(`Bỏ qua file ${fileName} do định dạng chưa được AI hỗ trợ.`);
+            }
+        } catch (error) {
+            console.error(`Lỗi xử lý file ${fileObj.original_name}:`, error);
+        }
+    };
+
+    // 4. XỬ LÝ FILE ĐỀ BÀI (Của giáo viên)
+    if (submission.assessment.files && submission.assessment.files.length > 0) {
+        requestData.push("\n========== CHI TIẾT ĐỀ BÀI VÀ YÊU CẦU ==========");
+        for (const tFile of submission.assessment.files) {
+            await processFile(tFile, "GIÁO VIÊN");
+        }
+    }
+
+    // 5. XỬ LÝ FILE BÀI LÀM (Của sinh viên)
+    if (submission.files && submission.files.length > 0) {
+        requestData.push("\n========== BÀI LÀM CỦA SINH VIÊN ==========");
+        for (const sFile of submission.files) {
+            await processFile(sFile, "SINH VIÊN");
+        }
+    } else {
+         requestData.push("\n========== BÀI LÀM CỦA SINH VIÊN ==========\n(Sinh viên không nộp file đính kèm nào)");
+    }
+
+    // 6. CÂU CHỐT NHIỆM VỤ CHO AI
+    requestData.push(`\n========== NHIỆM VỤ CHẤM BÀI ==========
+    Nhiệm vụ: Đọc kỹ tài liệu CHI TIẾT ĐỀ BÀI ở trên (nếu có) để nắm barem/câu hỏi, sau đó đối chiếu với BÀI LÀM CỦA SINH VIÊN.
+    Đánh giá mức độ hoàn thành đúng yêu cầu đề bài không, chỉ ra ưu điểm, nhược điểm hoặc lỗi sai cụ thể. 
+    Đưa ra điểm số cuối cùng (có thể là số thập phân, VD: 8.5) KHÔNG ĐƯỢC VƯỢT QUÁ ${submission.assessment.max_score} điểm.
+    
+    BẮT BUỘC trả về kết quả dưới dạng JSON có đúng 2 trường sau:
+    {
+      "suggested_score": <số điểm>,
+      "feedback": "<nhận xét chi tiết>"
+    }`);
+
+    // 7. GỬI REQUEST CHO GEMINI VÀ TRẢ KẾT QUẢ VỀ FRONTEND
+    try {
+        const result = await model.generateContent(requestData);
+        const responseText = result.response.text();
+        return JSON.parse(responseText);
+    } catch (error) {
+        console.error("Lỗi khi gọi AI:", error);
+        throw new Error("AI không phản hồi hoặc phản hồi sai định dạng JSON.");
+    }
   }
+
 };

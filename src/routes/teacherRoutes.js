@@ -1,6 +1,5 @@
 // src/routes/teacherRoutes.js
 import express from "express";
-// Gộp tất cả vào một dòng import duy nhất từ controller
 import { 
   createEssayAssessment, 
   getAssignmentsByClass, 
@@ -9,7 +8,7 @@ import {
   deleteAssessment,
   getSubmissionsByAssessment
 } from "../controllers/teacherController.js";
-import { getSubmissionForGrading, gradeSubmission } from '../controllers/teacherController.js';
+import { getSubmissionForGrading, gradeSubmission,aiGradeSubmission } from '../controllers/teacherController.js';
 
 import { isAuth, authorize } from "../middleware/isAuth.js";
 import { USER_ROLES } from "../constants/roles.js";
@@ -36,5 +35,7 @@ router.get("/assessments/:assessmentId/submissions", isAuth, authorize(USER_ROLE
 // Thêm 2 route này vào (Nhớ thêm middleware verifyToken/checkRole nếu có)
 router.get('/submissions/:submissionId/grading', isAuth, authorize(USER_ROLES.TEACHER), getSubmissionForGrading);
 router.post('/submissions/:submissionId/grade', isAuth, authorize(USER_ROLES.TEACHER), gradeSubmission);
+
+router.post('/submissions/:submissionId/ai-grade', isAuth, authorize(USER_ROLES.TEACHER), aiGradeSubmission);
 
 export default router;

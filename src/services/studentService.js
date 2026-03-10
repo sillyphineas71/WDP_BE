@@ -11,8 +11,8 @@ import { Submission } from "../models/Submission.js";
 import { AssessmentFile } from "../models/AssessmentFile.js";
 import { ConflictError, NotFoundError } from "../errors/AppError.js";
 import sequelize from "../config/database.js";
-import { Grade } from "../models/Grade.js"; // <--- THÊM DÒNG NÀY (Hoặc thêm Grade vào cùng hàng)
-import { SubmissionFile } from "../models/SubmissionFile.js"; // Hoặc import từ index.js tùy cấu trúc của bạn
+import { Grade } from "../models/Grade.js"; 
+import { SubmissionFile } from "../models/SubmissionFile.js"; 
 
 export const studentService = {
   getDashboard: async (studentId) => {
@@ -22,12 +22,12 @@ export const studentService = {
       include: [
         {
           model: Class,
-          as: "class", // Đã sửa từ classInfo -> class
+          as: "class",
           include: [
             {
               model: User,
-              as: "teacher", // Đã sửa từ teacherInfo -> teacher
-              attributes: ["id", "full_name"], // Đã sửa từ display_name -> full_name
+              as: "teacher",
+              attributes: ["id", "full_name"], 
             },
           ],
         },
@@ -68,7 +68,7 @@ export const studentService = {
       include: [
         {
           model: Class,
-          as: "class", // Đã sửa
+          as: "class", 
           attributes: ["id", "name"],
         },
       ],
@@ -104,11 +104,11 @@ export const studentService = {
       include: [
         {
           model: Class,
-          as: "class", // Đã sửa
+          as: "class", 
           include: [
             {
               model: User,
-              as: "teacher", // Đã sửa
+              as: "teacher", 
               attributes: ["id", "full_name"],
             },
             {
@@ -122,7 +122,7 @@ export const studentService = {
     });
 
     return enrollments.map(e => {
-        const c = e.class; // Đã sửa
+        const c = e.class; 
         
         const schedule = (c.sessions || []).map(s => {
             const dayOptions = { weekday: 'short' };
@@ -155,7 +155,7 @@ export const studentService = {
       include: [
         {
           model: User,
-          as: "teacher", // Đã sửa
+          as: "teacher", 
           attributes: ["id", "full_name"],
         },
         {
@@ -180,14 +180,8 @@ export const studentService = {
       where: { class_id: classId, status: { [Op.ne]: 'draft' } },
       order: [["due_at", "ASC"]],
     });
-
-// TẠM THỜI BỎ QUA BẢNG NOTIFICATION ĐỂ TRÁNH LỖI CLASS_ID
-    // const announcements = await Notification.findAll({
-    //   where: { class_id: classId, type: "ANNOUNCEMENT" }, 
-    //   order: [["created_at", "DESC"]],
-    // });
     
-    const announcements = []; // Để mảng rỗng để giao diện vẫn render được
+    const announcements = []; 
 
     return {
       id: cl.id,
@@ -220,9 +214,7 @@ export const studentService = {
     };
   },
 
-  // --- CÁC HÀM CHO BÀI TẬP ---
-// Tìm đến hàm getAssignmentDetail và sửa như sau:
-getAssignmentDetail: async (studentId, assessmentId) => {
+  getAssignmentDetail: async (studentId, assessmentId) => {
     const assessment = await Assessment.findByPk(assessmentId, {
       include: [{ model: AssessmentFile, as: 'files' }]
     });
@@ -241,7 +233,6 @@ getAssignmentDetail: async (studentId, assessmentId) => {
           as: 'grade',
           attributes: ['final_score', 'final_feedback', 'is_published']
         },
-        // THÊM ĐOẠN NÀY: Kéo theo các file sinh viên đã nộp
         {
           model: SubmissionFile, 
           as: 'files',
@@ -253,27 +244,33 @@ getAssignmentDetail: async (studentId, assessmentId) => {
     return { assessment, submission };
   },
 
-submitAssignment: async (studentId, assessmentId, data) => {
+  submitAssignment: async (studentId, assessmentId, data) => {
     const assessment = await Assessment.findByPk(assessmentId);
     if (!assessment) throw new Error("Không tìm thấy bài tập.");
 
     const now = new Date();
     
-    // Kiểm tra hạn nộp (Cutoff)
+    // 1. Kiểm tra đóng cổng (Cutoff)
     if (assessment.cutoff_at && now > new Date(assessment.cutoff_at)) {
       throw new Error("Hệ thống đã đóng cổng nộp bài.");
     }
 
+    // 2. TÍNH TOÁN TRẠNG THÁI NỘP BÀI (ĐÚNG HẠN HAY MUỘN)
+    let finalStatus = 'submitted';
+    if (assessment.due_at && now > new Date(assessment.due_at)) {
+        finalStatus = 'submitted_late';
+    }
+
     return await sequelize.transaction(async (t) => {
-      // 1. Tìm hoặc tạo bản ghi Submission
       let submission = await Submission.findOne({ 
         where: { assessment_id: assessmentId, student_id: studentId },
         transaction: t
       });
 
+      // 3. Cập nhật trạng thái bằng finalStatus đã tính toán
       if (submission) {
         await submission.update({
-          status: 'submitted',
+          status: finalStatus, 
           submitted_at: now,
           content_text: `Sinh viên đã nộp ${data.files ? data.files.length : 0} file`
         }, { transaction: t });
@@ -281,16 +278,15 @@ submitAssignment: async (studentId, assessmentId, data) => {
         submission = await Submission.create({
           assessment_id: assessmentId,
           student_id: studentId,
-          status: 'submitted',
+          status: finalStatus, 
           submitted_at: now,
           started_at: now,
           content_text: `Sinh viên đã nộp ${data.files ? data.files.length : 0} file`
         }, { transaction: t });
       }
 
-// 2. LƯU FILE VÀO BẢNG SubmissionFile
+      // 4. LƯU FILE VÀO BẢNG SubmissionFile
       if (data.files && Array.isArray(data.files) && data.files.length > 0) {
-        // Xóa các file cũ
         const { SubmissionFile } = sequelize.models; 
         
         await SubmissionFile.destroy({
@@ -298,7 +294,6 @@ submitAssignment: async (studentId, assessmentId, data) => {
           transaction: t
         });
 
-        // HÀM TẠO MẢNG DỮ LIỆU ĐÃ ĐƯỢC CẬP NHẬT ĐỂ TRÁNH LỖI mime_type
         const filesToSave = data.files.map(fileItem => {
           let fileUrl = typeof fileItem === 'string' ? fileItem : fileItem.url || fileItem.file_url || '';
           let originalName = fileItem.original_name || fileItem.name;
@@ -307,8 +302,7 @@ submitAssignment: async (studentId, assessmentId, data) => {
              originalName = fileUrl.split('/').pop().split(/[?#]/)[0]; 
           }
 
-          // Đoán mime_type dựa trên tên file
-          let mimeType = 'application/octet-stream'; // Mặc định nếu không rõ
+          let mimeType = 'application/octet-stream'; 
           if (originalName) {
               const lowerName = originalName.toLowerCase();
               if (lowerName.endsWith('.pdf')) mimeType = 'application/pdf';
@@ -323,7 +317,7 @@ submitAssignment: async (studentId, assessmentId, data) => {
             submission_id: submission.id,
             file_url: fileUrl,
             original_name: originalName || 'uploaded_file',
-            mime_type: mimeType // THÊM DÒNG NÀY ĐỂ FIX LỖI 23502
+            mimeType: mimeType 
           };
         });
 

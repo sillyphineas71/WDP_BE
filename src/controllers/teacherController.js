@@ -149,3 +149,24 @@ export const gradeSubmission = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 };
+
+export const aiGradeSubmission = async (req, res) => {
+    try {
+        const { submissionId } = req.params;
+        
+        // Gọi service gọi Gemini AI
+        const aiResult = await teacherService.aiGradeSubmission(submissionId);
+        
+        res.status(200).json({
+            success: true,
+            message: "AI đã phân tích xong",
+            data: aiResult
+        });
+    } catch (error) {
+        console.error("Lỗi aiGradeSubmission:", error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Lỗi khi gọi AI: " + (error.message || "Không xác định") 
+        });
+    }
+};
