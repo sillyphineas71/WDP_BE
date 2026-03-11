@@ -251,12 +251,12 @@ export const studentService = {
             include: [
                 {
                     model: Class,
-                    as: "classInfo",
+                    as: "class",
                     include: [
                         {
                             model: User,
-                            as: "teacherInfo",
-                            attributes: ["id", "display_name"],
+                            as: "teacher",
+                            attributes: ["id", "full_name"],
                         },
                     ],
                 },
@@ -298,8 +298,8 @@ export const studentService = {
             include: [
                 {
                     model: Class,
-                    as: "classInfo",
-                    attributes: ["id", "name", "room"],
+                    as: "class",
+                    attributes: ["id", "name"],
                 },
             ],
             order: [["start_time", "ASC"]],
@@ -307,17 +307,17 @@ export const studentService = {
 
         const formattedSessions = todaySessions.map(session => ({
             id: session.id,
-            title: session.classInfo.name,
+            title: session.class.name,
             date: session.start_time.toLocaleDateString('vi-VN'),
             time: `${session.start_time.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - ${session.end_time.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`,
-            location: `Room ${session.classInfo.room || 'TBA'}`
+            location: `Room ${session.room || 'TBA'}`
         }));
 
         const formattedClasses = enrollments.map(e => ({
-            id: e.classInfo.id,
-            name: e.classInfo.name,
-            teacher: e.classInfo.teacherInfo ? e.classInfo.teacherInfo.display_name : "N/A",
-            room: e.classInfo.room || "TBA"
+            id: e.class.id,
+            name: e.class.name,
+            teacher: e.class.teacher ? e.class.teacher.full_name : "N/A",
+            room: e.class.sessions?.[0]?.room || "TBA"
         }));
 
         return {
@@ -334,12 +334,12 @@ export const studentService = {
             include: [
                 {
                     model: Class,
-                    as: "classInfo",
+                    as: "class",
                     include: [
                         {
                             model: User,
-                            as: "teacherInfo",
-                            attributes: ["id", "display_name"],
+                            as: "teacher",
+                            attributes: ["id", "full_name"],
                         },
                         {
                             model: ClassSession,
@@ -352,7 +352,7 @@ export const studentService = {
         });
 
         return enrollments.map(e => {
-            const c = e.classInfo;
+            const c = e.class;
 
             // Format schedule from sessions
             const schedule = c.sessions.map(s => {
@@ -361,15 +361,15 @@ export const studentService = {
                 return {
                     day: s.start_time.toLocaleDateString('en-US', dayOptions),
                     time: `${s.start_time.toLocaleTimeString('en-US', timeOptions)} - ${s.end_time.toLocaleTimeString('en-US', timeOptions)}`,
-                    room: s.room || c.room
+                    room: s.room
                 };
             });
 
             return {
                 id: c.id,
                 name: c.name,
-                teacher: c.teacherInfo ? c.teacherInfo.display_name : "N/A",
-                room: c.room || "TBA",
+                teacher: c.teacher ? c.teacher.full_name : "N/A",
+                room: c.sessions?.[0]?.room || "TBA",
                 schedule: schedule
             };
         });
@@ -390,8 +390,8 @@ export const studentService = {
             include: [
                 {
                     model: User,
-                    as: "teacherInfo",
-                    attributes: ["id", "display_name"],
+                    as: "teacher",
+                    attributes: ["id", "full_name"],
                 },
                 {
                     model: ClassSession,
@@ -421,16 +421,13 @@ export const studentService = {
         });
 
         // 5. Announcements (Notifications)
-        const announcements = await Notification.findAll({
-            where: { class_id: classId, type: "ANNOUNCEMENT" }, // assuming type exists, or omit
-            order: [["created_at", "DESC"]],
-        });
+        const announcements = [];
 
         return {
             id: cl.id,
             name: cl.name,
-            teacher: cl.teacherInfo ? cl.teacherInfo.display_name : "N/A",
-            room: cl.room || "TBA",
+            teacher: cl.teacher ? cl.teacher.full_name : "N/A",
+            room: cl.sessions?.[0]?.room || "TBA",
             studentsCount,
             schedule: cl.sessions.map(s => ({
                 day: s.start_time.toLocaleDateString('en-US', { weekday: 'long' }),
