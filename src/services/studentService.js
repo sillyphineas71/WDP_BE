@@ -300,7 +300,7 @@ export const studentService = {
                 {
                     model: Class,
                     as: "class",
-                    attributes: ["id", "name", "room"],
+                    attributes: ["id", "name"],
                 },
             ],
             order: [["start_time", "ASC"]],
@@ -311,14 +311,14 @@ export const studentService = {
             title: session.class.name,
             date: session.start_time.toLocaleDateString('vi-VN'),
             time: `${session.start_time.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - ${session.end_time.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`,
-            location: `Room ${session.class.room || 'TBA'}`
+            location: `Room ${session.room || 'TBA'}`
         }));
 
         const formattedClasses = enrollments.map(e => ({
             id: e.class.id,
             name: e.class.name,
             teacher: e.class.teacher ? e.class.teacher.full_name : "N/A",
-            room: e.class.room || "TBA"
+            room: e.class.sessions?.[0]?.room || "TBA"
         }));
 
         return {
@@ -365,7 +365,7 @@ export const studentService = {
                 return {
                     day: s.start_time.toLocaleDateString('en-US', dayOptions),
                     time: `${s.start_time.toLocaleTimeString('en-US', timeOptions)} - ${s.end_time.toLocaleTimeString('en-US', timeOptions)}`,
-                    room: s.room || c.room
+                    room: s.room
                 };
             });
 
@@ -373,7 +373,7 @@ export const studentService = {
                 id: c.id,
                 name: c.name,
                 teacher: c.teacher ? c.teacher.full_name : "N/A",
-                room: c.room || "TBA",
+                room: c.sessions?.[0]?.room || "TBA",
                 schedule: schedule
             };
         });
@@ -427,14 +427,14 @@ export const studentService = {
             order: [["due_at", "ASC"]],
         });
 
-        // 5. Announcements
+        // 5. Announcements (Notifications)
         const announcements = [];
 
         return {
             id: cl.id,
             name: cl.name,
             teacher: cl.teacher ? cl.teacher.full_name : "N/A",
-            room: cl.room || "TBA",
+            room: cl.sessions?.[0]?.room || "TBA",
             studentsCount,
             schedule: (cl.sessions || []).map(s => ({
                 day: s.start_time.toLocaleDateString('en-US', { weekday: 'long' }),
