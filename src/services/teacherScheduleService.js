@@ -115,7 +115,8 @@ export const getTeacherSchedule = async (teacherId, query) => {
     start_time: { [Op.lt]: toDate },   // bắt đầu trước to
     end_time: { [Op.gt]: fromDate },    // kết thúc sau from
   };
-
+  console.log(sessionWhere);
+  
   // Điều kiện lọc Class — LUÔN lọc theo teacher_id (BR_CAL_01)
   const classWhere = { teacher_id: teacherId };
   if (class_id) {
@@ -155,6 +156,7 @@ export const getTeacherSchedule = async (teacherId, query) => {
     ],
     order: [["start_time", "ASC"]],
   });
+  console.log(sessions);
 
   // Gắn display_status cho mỗi buổi
   const data = sessions.map((s) => {

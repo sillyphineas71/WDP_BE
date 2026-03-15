@@ -1,7 +1,5 @@
 // src/services/studentMaterialService.js
 import { Op } from "sequelize";
-import path from "path";
-import fs from "fs";
 import {
   Material,
   Class,
@@ -42,7 +40,7 @@ const verifyStudentEnrolled = async (studentId, classId) => {
   assertUUID(classId, "classId");
 
   const enrollment = await Enrollment.findOne({
-    where: { student_id: studentId, class_id: classId, status: "active" },
+    where: { user_id: studentId, class_id: classId, status: "active" },
   });
 
   if (!enrollment) {
@@ -188,31 +186,15 @@ export const getMaterialDetail = async (studentId, materialId) => {
 // ────────────────────────────────────────────
 
 /**
- * Trả file để browser download. Nếu type=link → redirect URL.
- * Nếu file vật lý → stream file với header Content-Disposition.
+ * Trả URL để FE download/mở. File lưu trên Cloudinary → trả URL trực tiếp.
  */
 export const downloadMaterial = async (studentId, materialId) => {
   const material = await verifyStudentCanAccessMaterial(studentId, materialId);
 
-  // Link URL → trả URL để FE redirect
-  if (material.type === "link") {
-    return { redirect: true, url: material.file_url };
-  }
-
-  // File vật lý → trả absolute path để controller dùng res.download()
-  const filePath = path.resolve(material.file_url.replace(/^\//, ""));
-
-  if (!fs.existsSync(filePath)) {
-    throw httpError(
-      "Tài liệu này không tồn tại hoặc đã bị Giảng viên gỡ bỏ. Vui lòng tải lại trang.",
-      404,
-      "FILE_NOT_FOUND",
-    );
-  }
-
+  // Cả file lẫn link đều trả URL → FE mở tab mới hoặc tải về
   return {
-    redirect: false,
-    filePath,
-    originalFilename: material.original_filename || path.basename(filePath),
+    url: material.file_url,
+    original_filename: material.original_filename || null,
+    type: material.type,
   };
 };
