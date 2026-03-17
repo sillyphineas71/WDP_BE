@@ -21,6 +21,11 @@ export function initClassSession(sequelize) {
         allowNull: false,
         defaultValue: "scheduled",
       },
+      is_reminded: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
       cancelled_at: { type: DataTypes.DATE, allowNull: true, defaultValue: null },
       cancelled_reason: { type: DataTypes.TEXT, allowNull: true, defaultValue: null },
     },
