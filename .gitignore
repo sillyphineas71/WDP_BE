@@ -27,3 +27,5 @@ test_deadline_scanner.js
 test_event_notification.js
 test_notification_endpoints.js
 test_schedule_scanner.js
+seed_real_data_for_scanners.js
+test_simple_notification.js
