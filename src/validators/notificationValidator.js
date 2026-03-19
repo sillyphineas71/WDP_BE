@@ -46,3 +46,21 @@ export const validateTestPush = (payload) => {
 
   return schema.validate(payload, { abortEarly: false });
 };
+
+export const validateGetNotifications = (payload) => {
+  const schema = Joi.object({
+    page: Joi.number().integer().min(1).default(1),
+    limit: Joi.number().integer().min(1).max(100).default(10),
+    is_read: Joi.boolean().optional(),
+  });
+
+  return schema.validate(payload, { abortEarly: false });
+};
+
+export const validateNotificationId = (payload) => {
+  const schema = Joi.object({
+    id: Joi.string().uuid().required(),
+  });
+
+  return schema.validate(payload, { abortEarly: false });
+};
