@@ -1,6 +1,7 @@
 // src/routes/teacherRoutes.js
 import express from "express";
 import {
+  getDashboard,
   getMyClasses,
   createQuiz,
   createAssignment,
@@ -12,7 +13,8 @@ import {
   getSubmissionsByAssessment,
   getSubmissionForGrading,
   gradeSubmission,
-  aiGradeSubmission
+  aiGradeSubmission,
+  getGradingOverview
 } from "../controllers/teacherController.js";
 import { isAuth, authorize } from "../middleware/isAuth.js";
 import { USER_ROLES } from "../constants/roles.js";
@@ -53,6 +55,10 @@ router.put(
 // -----------------------------------------------------------------
 // Minh-branch: Essay Assessment CRUD & Grading routes
 // -----------------------------------------------------------------
+
+// API Dashboard (UC_TEA_16)
+router.get("/dashboard", isAuth, authorize(USER_ROLES.TEACHER), getDashboard);
+router.get("/grading/overview", isAuth, authorize(USER_ROLES.TEACHER), getGradingOverview);
 
 // API lấy danh sách lớp của tôi (minh-branch)
 router.get("/my-classes", isAuth, authorize(USER_ROLES.TEACHER), getMyClasses);

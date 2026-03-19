@@ -6,6 +6,27 @@ import { successResponse } from "../utils/responseUtils.js";
 
 // --- Dev branch: Quiz & Assignment & Grades (nam-branch) ---
 
+export const getDashboard = async (req, res, next) => {
+    try {
+        const teacherId = req.user?.id;
+
+        if (!teacherId) {
+            return res.status(401).json({
+                message: "Unauthorized"
+            });
+        }
+
+        const data = await teacherService.getDashboard(teacherId);
+
+        return res.json(
+            successResponse(data, "Teacher dashboard fetched successfully")
+        );
+
+    } catch (err) {
+        next(err);
+    }
+};
+
 export const getMyClasses = async (req, res, next) => {
     try {
         const teacherId = req.user?.id;
@@ -253,5 +274,16 @@ export const aiGradeSubmission = async (req, res) => {
             success: false,
             message: "Lỗi khi gọi AI: " + (error.message || "Không xác định")
         });
+    }
+};
+export const getGradingOverview = async (req, res, next) => {
+    try {
+        const teacherId = req.user?.id;
+        if (!teacherId) return res.status(401).json({ message: "Unauthorized" });
+
+        const data = await teacherService.getGradingOverview(teacherId);
+        return res.json(successResponse(data, "Grading overview fetched successfully"));
+    } catch (err) {
+        next(err);
     }
 };

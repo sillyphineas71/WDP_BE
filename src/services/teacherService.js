@@ -1,5 +1,6 @@
 // src/services/teacherService.js
-import { sequelize, Class, Assessment, Course, AssessmentFile, Submission, SubmissionFile, Grade, User } from "../models/index.js";
+import { Op } from "sequelize";
+import { sequelize, Class, Assessment, Course, AssessmentFile, Submission, SubmissionFile, Grade, User, ClassSession, Enrollment } from "../models/index.js";
 import { AppError, NotFoundError, ValidationError, ConflictError } from "../errors/AppError.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import mammoth from "mammoth";
@@ -480,17 +481,6 @@ export const teacherService = {
         });
     },
 
-    allowResubmit: async (submissionId) => {
-        const submission = await Submission.findByPk(submissionId);
-        if (!submission) throw new Error("Bài nộp không tồn tại.");
-
-        await submission.update({
-            status: 'pending',
-            attempt_no: submission.attempt_no + 1
-        });
-        return submission;
-    },
-
     aiGradeSubmission: async (submissionId) => {
         // 1. Lấy thông tin bài nộp
         const submission = await Submission.findByPk(submissionId, {
@@ -521,7 +511,7 @@ export const teacherService = {
         // 3. Chuẩn bị mảng dữ liệu gửi cho Gemini
         let requestData = [];
 
-        requestData.push(`Bạn là một giảng viên đại học khó tính nhưng công tâm đang chấm bài tập.
+        requestData.push(`Bạn là một giảng viên đại học khách quan và công tâm đang chấm bài tập.
     - Tiêu đề bài tập: "${submission.assessment.title}"
     - Hướng dẫn cơ bản: "${submission.assessment.instructions || 'Không có yêu cầu thêm'}"
     - Thang điểm tối đa: ${submission.assessment.max_score}
@@ -574,9 +564,13 @@ export const teacherService = {
         // 6. CÂU CHỐT NHIỆM VỤ CHO AI
         requestData.push(`\n========== NHIỆM VỤ CHẤM BÀI ==========
     Nhiệm vụ: Đọc kỹ tài liệu CHI TIẾT ĐỀ BÀI ở trên (nếu có) để nắm barem/câu hỏi, sau đó đối chiếu với BÀI LÀM CỦA SINH VIÊN.
-    Đánh giá mức độ hoàn thành đúng yêu cầu đề bài không, chỉ ra ưu điểm, nhược điểm hoặc lỗi sai cụ thể. 
-    Đưa ra điểm số cuối cùng (có thể là số thập phân, VD: 8.5) KHÔNG ĐƯỢC VƯỢT QUÁ ${submission.assessment.max_score} điểm.
     
+    Yêu cầu đánh giá CHẶT CHẼ và CHÍNH XÁC:
+    1. **KHÔNG ĐƯỢC tự mâu thuẫn**: Nếu sinh viên chọn hoặc giải ĐÚNG, bạn hãy ghi nhận ĐÚNG. Tuyệt đối tránh lỗi nhận xét mâu thuẫn (nhận định đúng là A, chọn A là đúng, nhưng liệt kê vào lỗi sai).
+    2. **Đánh giá Trắc nghiệm (MCQ)**: Kiểm tra chính xác Đáp án (A,B,C,D). Không bắt bẻ hình thức nếu sinh viên đã khoanh đúng chữ cái.
+    3. **Đánh giá Tự luận**: Chỉ ra bước biến đổi sai (nếu có) trước khi trừ điểm.
+    4. **Cách tính Điểm**: Chấm trên thang tối đa là ${submission.assessment.max_score}. Sinh viên đạt kết quả ĐÚNG 100% thì PHẢI chấm điểm TỐI ĐA.
+
     BẮT BUỘC trả về kết quả dưới dạng JSON có đúng 2 trường sau:
     {
       "suggested_score": <số điểm>,
@@ -594,4 +588,190 @@ export const teacherService = {
         }
     }
 
+    ,
+    /**
+     * UC_TEA_16: Get Teacher Dashboard Data
+     */
+    getDashboard: async (teacherId) => {
+        const Op = sequelize.Sequelize.Op;
+        const now = new Date();
+        const startOfToday = new Date(now.setHours(0, 0, 0, 0));
+        const endOfToday = new Date(now.setHours(23, 59, 59, 999));
+
+        // 1. Lọc Lớp học của giảng viên phụ trách
+        const classes = await Class.findAll({
+            where: { teacher_id: teacherId },
+            include: [
+                { model: Course, as: "course", attributes: ["name"] },
+            ],
+            order: [["created_at", "DESC"]]
+        });
+
+        const classIds = classes.map(c => c.id);
+
+        // 2. Lịch dạy hôm nay
+        const todaySessions = await ClassSession.findAll({
+            where: {
+                class_id: { [Op.in]: classIds },
+                start_time: {
+                    [Op.between]: [startOfToday, endOfToday]
+                }
+            },
+            include: [{ model: Class, as: "class", attributes: ["name"] }],
+            order: [["start_time", "ASC"]]
+        });
+
+        // 3. To-do / Needs Grading (Bài tập có bài nộp chờ chấm)
+        const needsGradingSubmissions = await Submission.findAll({
+            where: {
+                status: 'submitted'
+            },
+            include: [
+                {
+                    model: Assessment, as: "assessment",
+                    where: { class_id: { [Op.in]: classIds } },
+                    attributes: ["id", "title", "due_at"],
+                    include: [{ model: Class, as: "class", attributes: ["name"] }]
+                },
+                {
+                    model: User,
+                    as: "student",
+                    attributes: ["id", "full_name"]
+                }
+            ],
+            order: [["submitted_at", "ASC"]]
+        });
+
+        // 4. Thống kê theo bài tập cụ thể cho To-do List Widget
+        const toGradingStats = {};
+        needsGradingSubmissions.forEach(sub => {
+            const assId = sub.assessment.id;
+            if (!toGradingStats[assId]) {
+                toGradingStats[assId] = {
+                    assessmentId: assId,
+                    title: sub.assessment.title,
+                    className: sub.assessment.class?.name,
+                    dueAt: sub.assessment.due_at,
+                    count: 0
+                };
+            }
+            toGradingStats[assId].count += 1;
+        });
+
+        const needsGradingList = Object.values(toGradingStats);
+
+        // 5. Thống kê sĩ số & tiến độ lớp học
+        const classDetails = await Promise.all(classes.map(async (c) => {
+            const studentCount = await Enrollment.count({ where: { class_id: c.id } });
+            
+            const totalSessions = await ClassSession.count({ where: { class_id: c.id } });
+            const completedSessions = await ClassSession.count({
+                where: {
+                    class_id: c.id,
+                    end_time: { [Op.lt]: new Date() }
+                }
+            });
+            const progress = totalSessions > 0 ? Math.round((completedSessions / totalSessions) * 100) : 0;
+
+            return {
+                id: c.id,
+                name: c.name,
+                courseName: c.course?.name,
+                studentCount,
+                progress,
+                status: c.status
+            };
+        }));
+
+        // 6. Hoạt động gần đây (Recent Activities)
+        // Lấy 5 bài nộp muộn nhất hoặc mới nộp
+        const recentSubmissions = await Submission.findAll({
+            include: [
+                {
+                    model: Assessment, as: "assessment",
+                    where: { class_id: { [Op.in]: classIds } },
+                    attributes: ["title", "due_at"]
+                },
+                {
+                    model: User,
+                    as: "student",
+                    attributes: ["full_name"]
+                }
+            ],
+            order: [["submitted_at", "DESC"]],
+            limit: 5
+        });
+
+        const recentActivities = recentSubmissions.map(sub => {
+            const isLate = sub.status === 'submitted_late' || (sub.assessment?.due_at && new Date(sub.submitted_at) > new Date(sub.assessment?.due_at));
+            return {
+                id: sub.id,
+                type: 'SUBMISSION',
+                studentName: sub.student?.full_name,
+                assessmentTitle: sub.assessment?.title,
+                timestamp: sub.submitted_at,
+                isLate: isLate,
+                message: `${sub.student?.full_name} đã nộp bài "${sub.assessment?.title || "không rõ"}"` + (isLate ? " (Muộn)" : "")
+            };
+        });
+
+        return {
+            todaySessions: todaySessions.map(s => ({
+                id: s.id,
+                className: s.class?.name,
+                startTime: s.start_time,
+                endTime: s.end_time,
+                room: s.room
+            })),
+            needsGrading: needsGradingList,
+            classes: classDetails,
+            recentActivities
+        };
+    }
+    ,
+    getGradingOverview: async (teacherId) => {
+
+        const classes = await Class.findAll({
+            where: { teacher_id: teacherId }
+        });
+        const classIds = classes.map(c => c.id);
+
+        const assessments = await Assessment.findAll({
+            where: { class_id: { [Op.in]: classIds } },
+            include: [
+                { model: Class, as: "class", attributes: ["name"] },
+                { 
+                    model: Submission, 
+                    as: "submissions",
+                    include: [{ model: Grade, as: "grade" }]
+                }
+            ],
+            order: [["created_at", "DESC"]]
+        });
+
+        return assessments.map(a => {
+            let needsGradingCount = 0;
+            let gradedCount = 0;
+
+            if (a.submissions) {
+                a.submissions.forEach(sub => {
+                    if (sub.grade) {
+                        gradedCount++;
+                    } else {
+                        needsGradingCount++;
+                    }
+                });
+            }
+
+            return {
+                id: a.id,
+                title: a.title,
+                type: a.type, // QUIZ hoặc ASSIGNMENT
+                className: a.class?.name,
+                dueAt: a.due_at,
+                needsGradingCount,
+                gradedCount
+            };
+        });
+    }
 };

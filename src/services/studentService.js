@@ -276,20 +276,36 @@ export const studentService = {
         if (enrolledClassIds.length === 0) {
             return {
                 classes: [],
-                upcomingAssessments: 0,
+                upcomingAssessmentsCount: 0,
+                upcomingAssessments: [],
                 todaySessions: [],
-                recentGrades: []
+                recentActivities: []
             };
         }
 
-        // 2. Count upcoming assessments
-        const upcomingAssessments = await Assessment.count({
+        // 2. Count AND Get upcoming assessments in 7 days
+        const next7Days = new Date();
+        next7Days.setDate(next7Days.getDate() + 7);
+
+        const upcomingAssessmentsList = await Assessment.findAll({
             where: {
                 class_id: { [Op.in]: enrolledClassIds },
                 status: "published",
-                due_at: { [Op.gte]: new Date() },
+                due_at: { [Op.between]: [new Date(), next7Days] },
             },
+            include: [{ model: Class, as: "class", attributes: ["name"] }],
+            order: [["due_at", "ASC"]],
         });
+
+        const formattedAssessments = upcomingAssessmentsList.map(a => ({
+            id: a.id,
+            title: a.title,
+            type: a.type,
+            className: a.class?.name || "N/A",
+            dueAt: a.due_at,
+            dueFormatted: a.due_at ? new Date(a.due_at).toLocaleDateString('vi-VN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'No due date',
+            isUrgent: a.due_at ? (new Date(a.due_at) - new Date() < 24 * 60 * 60 * 1000) : false
+        }));
 
         // 3. Get today's schedule
         const startOfDay = new Date();
@@ -302,13 +318,7 @@ export const studentService = {
                 class_id: { [Op.in]: enrolledClassIds },
                 start_time: { [Op.between]: [startOfDay, endOfDay] },
             },
-            include: [
-                {
-                    model: Class,
-                    as: "class",
-                    attributes: ["id", "name"],
-                },
-            ],
+            include: [{ model: Class, as: "class", attributes: ["id", "name"] }],
             order: [["start_time", "ASC"]],
         });
 
@@ -317,21 +327,77 @@ export const studentService = {
             title: session.class.name,
             date: session.start_time.toLocaleDateString('vi-VN'),
             time: `${session.start_time.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - ${session.end_time.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`,
-            location: `Room ${session.room || 'TBA'}`
+            location: `Phòng ${session.room || 'TBA'}`
         }));
 
-        const formattedClasses = enrollments.map(e => ({
-            id: e.class.id,
-            name: e.class.name,
-            teacher: e.class.teacher ? e.class.teacher.full_name : "N/A",
-            room: e.class.sessions?.[0]?.room || "TBA"
+        // 4. Get Course Progress for list
+        const formattedClasses = await Promise.all(enrollments.map(async e => {
+            const classId = e.class.id;
+            const totalSesh = await ClassSession.count({ where: { class_id: classId } });
+            const completedSesh = await ClassSession.count({ where: { class_id: classId, start_time: { [Op.lt]: new Date() } } });
+            const progressPercent = totalSesh === 0 ? 0 : Math.round((completedSesh / totalSesh) * 100);
+
+            return {
+                id: classId,
+                name: e.class.name,
+                teacher: e.class.teacher ? e.class.teacher.full_name : "N/A",
+                room: e.class.sessions?.[0]?.room || "TBA",
+                progress: progressPercent
+            };
         }));
+
+        // 5. Get Recent Activities (Grades & Materials)
+        const recentGrades = await Grade.findAll({
+            include: [
+                {
+                    model: Submission,
+                    as: "submission",
+                    where: { student_id: studentId },
+                    include: [{ model: Assessment, as: "assessment", attributes: ["id", "title"] }]
+                }
+            ],
+            where: { is_published: true },
+            order: [["graded_at", "DESC"]],
+            limit: 3
+        });
+        
+        const formattedGrades = recentGrades.map(g => ({
+            id: g.id,
+            type: "grade",
+            title: `Đã công bố điểm cho ${g.submission?.assessment?.title || 'Bài tập'}`,
+            detail: `Điểm: ${g.final_score}`,
+            timestamp: g.graded_at
+        }));
+
+        const recentMaterials = await Material.findAll({
+            where: { class_id: { [Op.in]: enrolledClassIds } },
+            include: [{ model: Class, as: "class", attributes: ["name"] }],
+            order: [["created_at", "DESC"]],
+            limit: 3
+        });
+
+        const formattedMaterials = recentMaterials.map(m => ({
+            id: m.id,
+            type: "material",
+            title: `Tài liệu mới: ${m.title}`,
+            detail: m.class?.name || "",
+            timestamp: m.created_at
+        }));
+
+        const recentActivities = [...formattedGrades, ...formattedMaterials]
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+            .slice(0, 5)
+            .map(act => ({
+                ...act,
+                date: new Date(act.timestamp).toLocaleDateString('vi-VN', { month: '2-digit', day: '2-digit' })
+            }));
 
         return {
             classes: formattedClasses,
-            upcomingAssessments,
+            upcomingAssessmentsCount: formattedAssessments.length,
+            upcomingAssessments: formattedAssessments,
             todaySessions: formattedSessions,
-            recentGrades: []
+            recentActivities
         };
     },
 
@@ -456,7 +522,7 @@ export const studentService = {
                 id: a.id,
                 title: a.title,
                 due: a.due_at ? a.due_at.toLocaleString('en-US') : 'No due date',
-                points: a.type === 'QUIZ' ? '100' : '100',
+                points: Number(a.max_score) || 100,
             })),
             announcements: announcements.map(a => ({
                 id: a.id,

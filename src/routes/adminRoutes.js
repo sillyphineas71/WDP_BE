@@ -23,6 +23,10 @@ router.post("/classes/:id/sessions", adminController.addSession);
 router.put("/classes/:id/sessions", adminController.editSessions);
 router.delete("/classes/:id/sessions", adminController.deleteSessions);
 
+// UC_ADM_15: Import Lịch học
+router.post("/schedule/import/validate", adminController.validateScheduleImport);
+router.post("/schedule/import/confirm", adminController.confirmScheduleImport);
+
 // UC_ADM_12: Teachers
 router.get("/teachers", adminController.getTeachers);
 
