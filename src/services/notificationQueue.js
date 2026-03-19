@@ -6,6 +6,7 @@ export const NOTIFICATION_QUEUE_NAME = "notifications";
 export const JOB_TYPES = {
   EMAIL: "email",
   PUSH: "push",
+  EVENT: "event",
 };
 
 let notificationQueue;

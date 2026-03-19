@@ -1,4 +1,5 @@
 import express from "express";
+import { createServer } from "http";
 import "dotenv/config";
 import sequelize from "./src/config/database.js";
 import { initModels } from "./src/models/index.js";
@@ -18,8 +19,18 @@ import {
   startNotificationWorker,
   stopNotificationWorker,
 } from "./src/services/notificationWorkerService.js";
+import {
+  startScheduleReminder,
+  stopScheduleReminder,
+} from "./src/services/scheduleReminderJob.js";
+import {
+  startDeadlineScanner,
+  stopDeadlineScanner,
+} from "./src/services/scanDeadlinesJob.js";
+import { initializeSocket } from "./src/config/socket.js";
 
 const app = express();
+const httpServer = createServer(app);
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
@@ -93,13 +104,26 @@ async function startServer() {
     startNotificationWorker();
   }
 
-  const server = app.listen(PORT, () => {
+  if (process.env.START_SCHEDULE_SCANNER !== "false") {
+    startScheduleReminder();
+  }
+
+  if (process.env.START_DEADLINE_SCANNER !== "false") {
+    startDeadlineScanner();
+  }
+
+  // Initialize Socket.io
+  initializeSocket(httpServer);
+
+  const server = httpServer.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
     console.log(`Base URL: http://localhost:${PORT}`);
     console.log(`Health Check: http://localhost:${PORT}/api/health`);
   });
 
   const shutdown = async () => {
+    stopDeadlineScanner();
+    stopScheduleReminder();
     await stopNotificationWorker();
     await closeRedisConnection();
     server.close(() => process.exit(0));

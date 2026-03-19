@@ -9,6 +9,7 @@ import {
 } from "./notificationQueue.js";
 import { sendEmail } from "./emailService.js";
 import { sendPushToUser } from "./pushNotificationService.js";
+import { processEventNotification } from "./eventNotificationService.js";
 
 let notificationWorker;
 
@@ -18,6 +19,8 @@ const processNotificationJob = async (job) => {
       return sendEmail(job.data);
     case JOB_TYPES.PUSH:
       return sendPushToUser(job.data);
+    case JOB_TYPES.EVENT:
+      return processEventNotification(job.data);
     default:
       throw new Error(`Unsupported notification job type: ${job.name}`);
   }

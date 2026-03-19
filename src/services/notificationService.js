@@ -41,3 +41,12 @@ export const queuePushNotification = async (payload) => {
     handler: sendPushToUser,
   });
 };
+
+export const queueEventNotification = async (payload) => {
+  const { processEventNotification } = await import("./eventNotificationService.js");
+  return runNowOrQueue({
+    jobType: JOB_TYPES.EVENT,
+    payload,
+    handler: processEventNotification,
+  });
+};
