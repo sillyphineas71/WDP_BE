@@ -1,58 +1,161 @@
+// src/routes/teacherRoutes.js
 import express from "express";
-import { teacherController } from "../controllers/teacherController.js";
+import {
+  getMyClasses,
+  createQuiz,
+  getQuizzesByClass,
+  createAssignment,
+  publishGrades,
+  createEssayAssessment,
+  getAssignmentsByClass,
+  updateEssayAssessment,
+  deleteAssessment,
+  getSubmissionsByAssessment,
+  getSubmissionForGrading,
+  gradeSubmission,
+  aiGradeSubmission,
+  getQuizAttempts,
+  getQuizAttemptDetail,
+  overrideQuestionScore,
+  deleteQuizAttempt,
+  regradeAllAttempts,
+  getQuizQuestions,
+  addQuizQuestion,
+  updateQuizQuestion,
+  deleteQuizQuestion,
+  bulkAddQuizQuestions,
+  generateAiQuiz
+} from "../controllers/teacherController.js";
 import { isAuth, authorize } from "../middleware/isAuth.js";
+import { USER_ROLES } from "../constants/roles.js";
 import * as scheduleCtrl from "../controllers/teacherScheduleController.js";
 import * as materialCtrl from "../controllers/materialController.js";
 import { uploadSingleFile } from "../middleware/uploadMiddleware.js";
 
 const router = express.Router();
 
+// -----------------------------------------------------------------
+// Dev branch: Quiz & Assignment creation routes (nam-branch)
+// -----------------------------------------------------------------
+
 // UC_TEA_08: Teacher tạo quiz
 router.post(
   "/classes/:classId/quizzes",
   isAuth,
-  authorize("TEACHER"),
-  teacherController.createQuiz,
+  authorize(USER_ROLES.TEACHER),
+  createQuiz,
+);
+
+// Lấy danh sách Quizzes trong lớp
+router.get(
+  "/classes/:classId/quizzes",
+  isAuth,
+  authorize(USER_ROLES.TEACHER),
+  getQuizzesByClass,
 );
 
 // UC_TEA_10: Teacher tạo assignment (bài tập tự luận/nộp file)
 router.post(
   "/classes/:classId/assignments",
   isAuth,
-  authorize("TEACHER"),
-  teacherController.createAssignment,
+  authorize(USER_ROLES.TEACHER),
+  createAssignment,
 );
 
-// Lấy danh sách lớp của giáo viên
-router.get(
-  "/teacher/classes",
-  isAuth,
-  authorize("TEACHER"),
-  teacherController.getMyClasses,
-);
+// -----------------------------------------------------------------
+// UC_TEA_09: Soạn câu hỏi Quiz (Quiz Question CRUD)
+// -----------------------------------------------------------------
 
-// Giữ thêm route cũ để không mất code / không vỡ FE cũ nếu đang dùng
-router.get(
-  "/classes",
-  isAuth,
-  authorize("TEACHER"),
-  teacherController.getMyClasses,
-);
+// Lấy danh sách câu hỏi của Quiz
+router.get("/quizzes/:assessmentId/questions", isAuth, authorize(USER_ROLES.TEACHER), getQuizQuestions);
+
+// Thêm 1 câu hỏi thủ công
+router.post("/quizzes/:assessmentId/questions", isAuth, authorize(USER_ROLES.TEACHER), addQuizQuestion);
+
+// Thêm nhiều câu hỏi (Lưu vào đề từ AI hoặc batch)
+router.post("/quizzes/:assessmentId/questions/bulk", isAuth, authorize(USER_ROLES.TEACHER), bulkAddQuizQuestions);
+
+// Tạo câu hỏi bằng AI (Review trước khi lưu)
+router.post("/quizzes/:assessmentId/generate-ai", isAuth, authorize(USER_ROLES.TEACHER), generateAiQuiz);
+
+// Cập nhật câu hỏi
+router.put("/quizzes/questions/:questionId", isAuth, authorize(USER_ROLES.TEACHER), updateQuizQuestion);
+
+// Xóa câu hỏi
+router.delete("/quizzes/questions/:questionId", isAuth, authorize(USER_ROLES.TEACHER), deleteQuizQuestion);
 
 // UC_TEA_15: Công bố điểm (Publish grades)
 router.put(
   "/classes/:classId/assessments/:assessmentId/grades/publish",
   isAuth,
-  authorize("TEACHER"),
-  teacherController.publishGrades,
+  authorize(USER_ROLES.TEACHER),
+  publishGrades,
 );
 
+// -----------------------------------------------------------------
+// Minh-branch: Essay Assessment CRUD & Grading routes
+// -----------------------------------------------------------------
+
+// API lấy danh sách lớp của tôi (minh-branch)
+router.get("/my-classes", isAuth, authorize(USER_ROLES.TEACHER), getMyClasses);
+
+// Giữ thêm route cũ để không vỡ FE cũ nếu đang dùng
+router.get("/classes", isAuth, authorize(USER_ROLES.TEACHER), getMyClasses);
+
+// Thêm route /teacher/classes cho dev branch compatibility
+router.get("/teacher/classes", isAuth, authorize(USER_ROLES.TEACHER), getMyClasses);
+
+// API lấy danh sách bài tập của một lớp
+router.get("/classes/:classId/assessments", isAuth, authorize(USER_ROLES.TEACHER), getAssignmentsByClass);
+
+// API tạo bài tập essay (minh-branch)
+router.post("/classes/:classId/assessments/essay", isAuth, authorize(USER_ROLES.TEACHER), createEssayAssessment);
+
+// API cập nhật bài tập
+router.put("/classes/:classId/assessments/essay/:assessmentId", isAuth, authorize(USER_ROLES.TEACHER), updateEssayAssessment);
+
+// API xóa bài tập
+router.delete("/classes/:classId/assessments/:assessmentId", isAuth, authorize(USER_ROLES.TEACHER), deleteAssessment);
+
+// Route lấy danh sách bài nộp của một bài tập cụ thể
+router.get("/assessments/:assessmentId/submissions", isAuth, authorize(USER_ROLES.TEACHER), getSubmissionsByAssessment);
+
+// Grading routes
+router.get('/submissions/:submissionId/grading', isAuth, authorize(USER_ROLES.TEACHER), getSubmissionForGrading);
+router.post('/submissions/:submissionId/grade', isAuth, authorize(USER_ROLES.TEACHER), gradeSubmission);
+
+// AI grading
+router.post('/submissions/:submissionId/ai-grade', isAuth, authorize(USER_ROLES.TEACHER), aiGradeSubmission);
+
+// -----------------------------------------------------------------
+// UC_TEA_13: Duyệt điểm Quiz (Quiz Review)
+// -----------------------------------------------------------------
+
+// Lấy danh sách tất cả lượt làm bài + phổ điểm
+router.get('/quizzes/:assessmentId/attempts', isAuth, authorize(USER_ROLES.TEACHER), getQuizAttempts);
+
+// Xem chi tiết một lượt làm bài (Review Attempt)
+router.get('/quizzes/attempts/:submissionId/review', isAuth, authorize(USER_ROLES.TEACHER), getQuizAttemptDetail);
+
+// Ghi đè điểm một câu hỏi cụ thể (Override Mark)
+router.put('/quizzes/attempts/:submissionId/questions/:questionId/override', isAuth, authorize(USER_ROLES.TEACHER), overrideQuestionScore);
+
+// Xóa một lượt làm bài (Delete Attempt)
+router.delete('/quizzes/attempts/:submissionId', isAuth, authorize(USER_ROLES.TEACHER), deleteQuizAttempt);
+
+// Chấm lại toàn bộ (Regrade All)
+router.post('/quizzes/:assessmentId/regrade', isAuth, authorize(USER_ROLES.TEACHER), regradeAllAttempts);
+
+// -----------------------------------------------------------------
+// Dev branch: Schedule & Material management
+// -----------------------------------------------------------------
+
 // Tất cả route dưới đây yêu cầu đăng nhập + role TEACHER
-router.use(isAuth, authorize("TEACHER"));
+router.use(isAuth, authorize(USER_ROLES.TEACHER));
 
 // ────────────── UC_TEA_06: Lịch dạy ──────────────
 
-// Danh sách lớp của GV (cho dropdown lọc) — đặt trước /:sessionId để tránh xung đột
+// Danh sách lớp của GV (cho dropdown lọc)
 router.get("/schedule/classes", scheduleCtrl.getTeacherClasses);
 
 // Lịch giảng dạy (Calendar)

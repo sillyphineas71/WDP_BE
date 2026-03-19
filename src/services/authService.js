@@ -1,3 +1,4 @@
+// src/services/authService.js
 import { User } from "../models/User.js";
 import { Role } from "../models/Role.js";
 import { comparePassword } from "../utils/passwordUtils.js";
@@ -73,9 +74,12 @@ export const loginUser = async (userData) => {
   // Generate JWT token
   const token = generateToken(user, user.role);
 
-  // Return token and user info
+  // Return token and user info (ĐÃ FIX: Bơm thêm role vào đây)
   return {
     token,
-    user: formatUserResponse(user),
+    user: {
+      ...formatUserResponse(user),
+      role: user.role.code, 
+    },
   };
 };
