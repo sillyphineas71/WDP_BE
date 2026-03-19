@@ -14,7 +14,11 @@ import { ConflictError, NotFoundError } from "../errors/AppError.js";
 export const adminService = {
     // --- UC_ADM_10: QUẢN LÝ KHÓA HỌC ---
     getAllCourses: async () => {
-        return await Course.findAll({ order: [["created_at", "DESC"]] });
+        const allCourses = await Course.findAll({ 
+            order: [["created_at", "DESC"]] 
+        });
+        // Lọc trong JS để đảm bảo xử lý được cả null, undefined, false
+        return allCourses.filter(c => !c.is_deleted);
     },
 
     createCourse: async (data) => {
@@ -482,7 +486,7 @@ export const adminService = {
         let A=0, B=0, C=0, D=0, F=0;
         try {
             const [gradeRows] = await Grade.sequelize.query(
-                `SELECT score FROM grades WHERE score IS NOT NULL`
+                `SELECT final_score as score FROM grades WHERE final_score IS NOT NULL`
             );
             gradeRows.forEach(g => {
                 const score = parseFloat(g.score);
@@ -549,16 +553,17 @@ export const adminService = {
         }
 
         // Get grades for classes that match the filter
-        let whereClause = `WHERE g.score IS NOT NULL`;
+        let whereClause = `WHERE g.final_score IS NOT NULL`;
         if (classWhere.semester) whereClause += ` AND cl.semester = '${classWhere.semester.replace(/'/g, "''")}'`;
         if (classWhere.course_id) whereClause += ` AND cl.course_id = '${classWhere.course_id}'`;
 
         let A=0, B=0, C=0, D=0, F=0;
         try {
             const [gradeRows] = await Grade.sequelize.query(`
-                SELECT g.score 
+                SELECT g.final_score as score 
                 FROM grades g
-                JOIN assessments a ON g.assessment_id = a.id
+                JOIN submissions s ON g.submission_id = s.id
+                JOIN assessments a ON s.assessment_id = a.id
                 JOIN classes cl ON a.class_id = cl.id
                 ${whereClause}
             `);
@@ -613,13 +618,14 @@ export const adminService = {
         // Average grade letter
         let avgGrade = 'N/A';
         try {
-            let sqlWhere = `WHERE g.score IS NOT NULL`;
+            let sqlWhere = `WHERE g.final_score IS NOT NULL`;
             if (classWhere.semester) sqlWhere += ` AND cl.semester = '${classWhere.semester.replace(/'/g, "''")}'`;
             if (classWhere.course_id) sqlWhere += ` AND cl.course_id = '${classWhere.course_id}'`;
             const [avgRows] = await Grade.sequelize.query(`
-                SELECT AVG(g.score::numeric) as avg_score
+                SELECT AVG(g.final_score::numeric) as avg_score
                 FROM grades g
-                JOIN assessments a ON g.assessment_id = a.id
+                JOIN submissions s ON g.submission_id = s.id
+                JOIN assessments a ON s.assessment_id = a.id
                 JOIN classes cl ON a.class_id = cl.id
                 ${sqlWhere}
             `);
@@ -739,7 +745,8 @@ export const adminService = {
                         ${buildBucketCase('graded_at', 'g')} AS week_num,
                         0 AS quizzes, 0 AS materials, COUNT(*)::int AS graded
                     FROM grades g
-                    JOIN assessments a ON g.assessment_id = a.id
+                    JOIN submissions s ON g.submission_id = s.id
+                    JOIN assessments a ON s.assessment_id = a.id
                     JOIN classes cl ON a.class_id = cl.id
                     JOIN courses c2 ON cl.course_id = c2.id
                     WHERE g.graded_at >= NOW() - INTERVAL '${totalInterval}'
@@ -805,7 +812,8 @@ export const adminService = {
             const [[r]] = await Grade.sequelize.query(`
                 SELECT COUNT(g.id)::int as total_graded
                 FROM grades g
-                JOIN assessments a ON g.assessment_id = a.id
+                JOIN submissions s ON g.submission_id = s.id
+                JOIN assessments a ON s.assessment_id = a.id
                 JOIN classes cl ON a.class_id = cl.id
                 JOIN courses c2 ON cl.course_id = c2.id
                 WHERE g.graded_at IS NOT NULL

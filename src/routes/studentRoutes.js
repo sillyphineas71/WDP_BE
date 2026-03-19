@@ -95,4 +95,12 @@ router.get("/materials/:materialId", isAuth, authorize(USER_ROLES.STUDENT), mate
 // Download / redirect URL
 router.get("/materials/:materialId/download", isAuth, authorize(USER_ROLES.STUDENT), materialCtrl.downloadMaterial);
 
+// -----------------------------------------------------------------
+// UC_STU_12: Xem nhận xét (điểm + feedback GV + AI)
+// -----------------------------------------------------------------
+import { studentGradeController } from "../controllers/studentGradeController.js";
+
+router.get("/grades/overview", isAuth, authorize(USER_ROLES.STUDENT), studentGradeController.getGradesOverview);
+router.get("/classes/:classId/grades", isAuth, authorize(USER_ROLES.STUDENT), studentGradeController.getClassGrades);
+
 export default router;

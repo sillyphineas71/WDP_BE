@@ -28,6 +28,11 @@ export function initAssessment(sequelize) {
         allowNull: false,
         defaultValue: "draft",
       },
+      reminder_sent: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
       
       // === CÁC TRƯỜNG MỚI ĐƯỢC THÊM CHO UC_TEA_10 ===
       allow_from: { 

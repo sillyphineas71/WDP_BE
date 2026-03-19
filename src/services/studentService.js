@@ -260,6 +260,12 @@ export const studentService = {
                             as: "teacher",
                             attributes: ["id", "full_name"],
                         },
+                        {
+                            model: ClassSession,
+                            as: "sessions",
+                            attributes: ["room"],
+                            limit: 1, 
+                        }
                     ],
                 },
             ],
@@ -403,7 +409,7 @@ export const studentService = {
                 {
                     model: ClassSession,
                     as: "sessions",
-                    attributes: ["start_time", "end_time"],
+                    attributes: ["start_time", "end_time", "room"],
                     order: [["start_time", "ASC"]]
                 }
             ],

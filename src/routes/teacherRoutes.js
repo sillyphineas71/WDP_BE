@@ -130,4 +130,16 @@ router.patch("/materials/:materialId/visibility", materialCtrl.toggleVisibility)
 // Xóa tài liệu
 router.delete("/materials/:materialId", materialCtrl.deleteMaterial);
 
+// -----------------------------------------------------------------
+// UC_TEA_09: Quiz Question Management + AI Generation
+// -----------------------------------------------------------------
+import { quizQuestionController } from "../controllers/quizQuestionController.js";
+
+router.get("/quizzes/:quizId/questions", quizQuestionController.getQuestions);
+router.post("/quizzes/:quizId/questions", quizQuestionController.createQuestion);
+router.put("/quizzes/questions/:questionId", quizQuestionController.updateQuestion);
+router.delete("/quizzes/questions/:questionId", quizQuestionController.deleteQuestion);
+router.post("/quizzes/:quizId/generate-ai", quizQuestionController.generateAIQuestions);
+router.post("/quizzes/:quizId/questions/bulk", quizQuestionController.bulkSaveQuestions);
+
 export default router;
