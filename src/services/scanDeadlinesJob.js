@@ -14,6 +14,7 @@ import {
   queueEmailNotification,
   queuePushNotification,
 } from "./notificationService.js";
+import { pushInAppNotification } from "../config/socket.js";
 
 // Task 1: Warn students about upcoming deadlines (if they haven't submitted)
 const processUpcomingDeadlines = async () => {
@@ -131,7 +132,7 @@ const processUpcomingDeadlines = async () => {
             <p>Hệ thống Smart Edu</p>
           `;
 
-          notificationsToCreate.push({
+          const newNotification = {
             user_id: student.id,
             channel: "in_app",
             title,
@@ -140,7 +141,10 @@ const processUpcomingDeadlines = async () => {
             ref_id: assessment.id,
             status: "sent",
             sent_at: new Date(),
-          });
+          };
+
+          notificationsToCreate.push(newNotification);
+          pushInAppNotification(student.id, newNotification);
 
           // Queue push
           queuePushNotification({

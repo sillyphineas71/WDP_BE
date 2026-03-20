@@ -13,6 +13,7 @@ import {
   queueEmailNotification,
   queuePushNotification,
 } from "./notificationService.js";
+import { pushInAppNotification } from "../config/socket.js";
 
 const processUpcomingSessions = async () => {
   try {
@@ -134,8 +135,7 @@ const processUpcomingSessions = async () => {
             <p>Hệ thống Smart Edu</p>
           `;
 
-          // Pre-create DB records
-          notificationsToCreate.push({
+          const newNotification = {
             user_id: recipient.id,
             channel: "in_app",
             title,
@@ -144,7 +144,13 @@ const processUpcomingSessions = async () => {
             ref_id: session.id,
             status: "sent", // in_app is instant
             sent_at: new Date(),
-          });
+          };
+
+          // Pre-create DB records
+          notificationsToCreate.push(newNotification);
+          
+          // Emit WebSocket event realtime
+          pushInAppNotification(recipient.id, newNotification);
 
           // Queue push notification
           queuePushNotification({
