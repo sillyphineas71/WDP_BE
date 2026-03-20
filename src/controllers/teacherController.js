@@ -87,6 +87,19 @@ export const createQuiz = async (req, res, next) => {
     }
 };
 
+export const updateQuizStatus = async (req, res, next) => {
+    try {
+        const teacherId = req.user.id;
+        const { classId, quizId } = req.params;
+        const { status } = req.body;
+
+        const data = await teacherService.updateQuizStatus(teacherId, classId, quizId, status);
+        res.status(200).json(successResponse(data, "Cập nhật trạng thái Quiz thành công"));
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const createAssignment = async (req, res, next) => {
     try {
         const teacherId = req.user?.id;

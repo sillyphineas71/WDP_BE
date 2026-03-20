@@ -26,7 +26,8 @@ import {
   updateQuizQuestion,
   deleteQuizQuestion,
   bulkAddQuizQuestions,
-  generateAiQuiz
+  generateAiQuiz,
+  updateQuizStatus
 } from "../controllers/teacherController.js";
 import { isAuth, authorize } from "../middleware/isAuth.js";
 import { USER_ROLES } from "../constants/roles.js";
@@ -54,6 +55,14 @@ router.get(
   isAuth,
   authorize(USER_ROLES.TEACHER),
   getQuizzesByClass,
+);
+
+// Cập nhật trạng thái Quiz (Lưu đề)
+router.patch(
+  "/classes/:classId/quizzes/:quizId/status",
+  isAuth,
+  authorize(USER_ROLES.TEACHER),
+  updateQuizStatus,
 );
 
 // UC_TEA_10: Teacher tạo assignment (bài tập tự luận/nộp file)

@@ -120,6 +120,16 @@ export const teacherService = {
         };
     },
 
+    updateQuizStatus: async (teacherId, classId, quizId, status) => {
+        const assessment = await Assessment.findOne({
+            where: { id: quizId, class_id: classId, created_by: teacherId, type: 'QUIZ' }
+        });
+        if (!assessment) throw new NotFoundError("Bài kiểm tra không tồn tại hoặc bạn không quản lý lớp này.");
+
+        await assessment.update({ status });
+        return assessment;
+    },
+
     /**
      * GET only QUIZ assessments for a specific class
      */
