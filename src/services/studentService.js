@@ -20,9 +20,15 @@ import { Op } from "sequelize";
 import { AppError, ConflictError, NotFoundError } from "../errors/AppError.js";
 
 /**
- * Parse quiz settings from instructions (UC_TEA_08 lưu meta vào instructions)
+ * Parse quiz settings - reads from settings_json (JSONB) first,
+ * falls back to parsing [quiz_settings] block in instructions text
  */
-function parseQuizSettings(instructions) {
+function parseQuizSettings(instructions, settingsJson) {
+    // Prefer structured JSONB column
+    if (settingsJson && typeof settingsJson === 'object' && Object.keys(settingsJson).length > 0) {
+        return settingsJson;
+    }
+    // Fallback: parse from instructions text
     if (!instructions) return {};
     const marker = "[quiz_settings]";
     const idx = instructions.lastIndexOf(marker);
@@ -585,7 +591,7 @@ export const studentService = {
     // UC_STU_09 - Start/Resume attempt
     startOrResumeAttempt: async ({ studentId, quizId }) => {
         const quiz = await loadQuizWithQuestions(quizId);
-        const settings = parseQuizSettings(quiz.instructions);
+        const settings = parseQuizSettings(quiz.instructions, quiz.settings_json);
 
         await ensureStudentEnrolled(studentId, quiz.class_id);
         ensureQuizAvailable(quiz, settings);
@@ -786,7 +792,7 @@ export const studentService = {
         if (attempt.status !== "in_progress") throw new ConflictError("Attempt is not in progress");
 
         const quiz = await loadQuizWithQuestions(attempt.assessment_id);
-        const settings = parseQuizSettings(quiz.instructions);
+        const settings = parseQuizSettings(quiz.instructions, quiz.settings_json);
 
         // auto-submit if expired
         const expiresAt = computeExpiresAt(attempt.started_at, quiz.time_limit_minutes);
@@ -886,7 +892,7 @@ export const studentService = {
         if (String(attempt.student_id) !== String(studentId)) throw new AppError("Forbidden", 403);
 
         const quiz = await loadQuizWithQuestions(attempt.assessment_id);
-        const settings = parseQuizSettings(quiz.instructions);
+        const settings = parseQuizSettings(quiz.instructions, quiz.settings_json);
 
         if (attempt.status !== "in_progress") {
             throw new ConflictError("Attempt đã được nộp");
@@ -998,7 +1004,7 @@ export const studentService = {
             }
 
             // E1: Điểm chưa được công bố
-            const isPublished = grade?.is_published === true;
+            const isPublished = !!grade?.is_published;
 
             // Chỉ lấy điểm đã published
             let score = null;
