@@ -1,5 +1,6 @@
 import express from "express";
 import { adminController } from "../controllers/adminController.js";
+import { userManagementController } from "../controllers/userManagementController.js";
 
 const router = express.Router();
 
@@ -22,6 +23,10 @@ router.post("/classes/:id/sessions", adminController.addSession);
 router.put("/classes/:id/sessions", adminController.editSessions);
 router.delete("/classes/:id/sessions", adminController.deleteSessions);
 
+// UC_ADM_15: Import Lịch học
+router.post("/schedule/import/validate", adminController.validateScheduleImport);
+router.post("/schedule/import/confirm", adminController.confirmScheduleImport);
+
 // UC_ADM_12: Teachers
 router.get("/teachers", adminController.getTeachers);
 
@@ -36,5 +41,12 @@ router.get("/dashboard/stats", adminController.getDashboardStats);
 router.get("/reports/data", adminController.getReportData);
 router.get("/reports/filters", adminController.getReportFilters);
 router.get("/reports/teacher-activity", adminController.getTeacherActivity);
+
+// UC_ADM_05 → UC_ADM_09: User Management
+router.get("/users", userManagementController.getUsers);
+router.post("/users", userManagementController.createUser);
+router.put("/users/:id", userManagementController.updateUser);
+router.patch("/users/:id/status", userManagementController.toggleStatus);
+router.patch("/users/:id/reset-password", userManagementController.resetPassword);
 
 export default router;

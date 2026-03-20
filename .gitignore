@@ -19,3 +19,13 @@ coverage/
 .nyc_output/
 .env.production
 .env.test
+
+test_cloudinary.js
+test_multer.js
+test_connect_redis.js
+test_deadline_scanner.js
+test_event_notification.js
+test_notification_endpoints.js
+test_schedule_scanner.js
+seed_real_data_for_scanners.js
+test_simple_notification.js

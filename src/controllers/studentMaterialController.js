@@ -33,21 +33,14 @@ export const getMaterialDetail = async (req, res, next) => {
 
 /**
  * GET /api/student/materials/:materialId/download
- * Download file hoặc redirect URL.
+ * Trả URL để FE download hoặc mở.
  */
 export const downloadMaterial = async (req, res, next) => {
   try {
     const studentId = req.user.id;
     const { materialId } = req.params;
     const result = await service.downloadMaterial(studentId, materialId);
-
-    if (result.redirect) {
-      // Link URL → trả URL để FE mở tab mới
-      return res.status(200).json({ message: "OK", data: { url: result.url } });
-    }
-
-    // File vật lý → stream download
-    res.download(result.filePath, result.originalFilename);
+    return res.status(200).json({ message: "OK", data: result });
   } catch (e) {
     next(e);
   }
