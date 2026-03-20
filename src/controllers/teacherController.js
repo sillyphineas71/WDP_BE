@@ -1,10 +1,31 @@
 // src/controllers/teacherController.js
 import { teacherService } from "../services/teacherService.js";
-import { validateCreateQuiz, validateCreateAssignment, validatePublishGrades } from "../validators/teacherValidator.js";
+import { validateCreateQuiz, validateCreateAssignment, validatePublishGrades, validateOverrideScore, validateCreateQuizQuestion, validateUpdateQuizQuestion, validateBulkCreateQuizQuestions, validateGenerateAiQuiz } from "../validators/teacherValidator.js";
 import { createEssaySchema } from "../validators/assessmentValidator.js";
 import { successResponse } from "../utils/responseUtils.js";
 
 // --- Dev branch: Quiz & Assignment & Grades (nam-branch) ---
+
+export const getDashboard = async (req, res, next) => {
+    try {
+        const teacherId = req.user?.id;
+
+        if (!teacherId) {
+            return res.status(401).json({
+                message: "Unauthorized"
+            });
+        }
+
+        const data = await teacherService.getDashboard(teacherId);
+
+        return res.json(
+            successResponse(data, "Teacher dashboard fetched successfully")
+        );
+
+    } catch (err) {
+        next(err);
+    }
+};
 
 export const getMyClasses = async (req, res, next) => {
     try {
@@ -22,6 +43,21 @@ export const getMyClasses = async (req, res, next) => {
             successResponse(classes, "Teacher classes fetched successfully")
         );
 
+    } catch (err) {
+        next(err);
+    }
+};
+
+export const getQuizzesByClass = async (req, res, next) => {
+    try {
+        const teacherId = req.user?.id;
+        const { classId } = req.params;
+
+        const data = await teacherService.getQuizzesByClass(teacherId, classId);
+
+        return res.json(
+            successResponse(data, "Quizzes fetched successfully")
+        );
     } catch (err) {
         next(err);
     }
@@ -46,6 +82,69 @@ export const createQuiz = async (req, res, next) => {
             .status(201)
             .json(successResponse(data, "Quiz created", 201));
 
+    } catch (err) {
+        next(err);
+    }
+};
+
+export const updateQuizStatus = async (req, res, next) => {
+    try {
+        const teacherId = req.user?.id;
+        const { classId, quizId } = req.params;
+        const { status } = req.body;
+
+        const data = await teacherService.updateQuizStatus(
+            teacherId,
+            classId,
+            quizId,
+            status
+        );
+
+        return res
+            .status(200)
+            .json(successResponse(data, "Cập nhật trạng thái Quiz thành công"));
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getQuizDetail = async (req, res, next) => {
+    try {
+        const teacherId = req.user?.id;
+        const { classId, quizId } = req.params;
+
+        const data = await teacherService.getQuizDetail(
+            teacherId,
+            classId,
+            quizId
+        );
+
+        return res.json(
+            successResponse(data, "Quiz detail fetched successfully")
+        );
+    } catch (err) {
+        next(err);
+    }
+};
+
+export const updateQuiz = async (req, res, next) => {
+    try {
+        const teacherId = req.user?.id;
+        const { classId, quizId } = req.params;
+
+        const { error, value } = validateCreateQuiz(req.body);
+        if (error) return next(error);
+
+        const data = await teacherService.updateQuiz(
+            teacherId,
+            classId,
+            quizId,
+            value
+        );
+
+        return res.json(
+            successResponse(data, "Quiz updated successfully")
+        );
     } catch (err) {
         next(err);
     }
@@ -88,7 +187,8 @@ export const publishGrades = async (req, res, next) => {
             teacherId,
             classId,
             assessmentId,
-            value.is_published
+            value.is_published,
+            value.publish_mode
         );
 
         return res
@@ -253,5 +353,173 @@ export const aiGradeSubmission = async (req, res) => {
             success: false,
             message: "Lỗi khi gọi AI: " + (error.message || "Không xác định")
         });
+    }
+};
+export const getGradingOverview = async (req, res, next) => {
+    try {
+        const teacherId = req.user?.id;
+        if (!teacherId) return res.status(401).json({ message: "Unauthorized" });
+
+        const data = await teacherService.getGradingOverview(teacherId);
+        return res.json(successResponse(data, "Grading overview fetched successfully"));
+    } catch (err) {
+        next(err);
+    }
+};
+
+// --- UC_TEA_13: Duyệt điểm Quiz (Quiz Review) ---
+
+export const getQuizAttempts = async (req, res, next) => {
+    try {
+        const teacherId = req.user.id;
+        const { assessmentId } = req.params;
+
+        const data = await teacherService.getQuizAttempts(teacherId, assessmentId);
+
+        res.status(200).json(successResponse(data, "Lấy danh sách lượt làm bài thành công"));
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getQuizAttemptDetail = async (req, res, next) => {
+    try {
+        const teacherId = req.user.id;
+        const { submissionId } = req.params;
+
+        const data = await teacherService.getQuizAttemptDetail(teacherId, submissionId);
+
+        res.status(200).json(successResponse(data, "Lấy chi tiết lượt làm bài thành công"));
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const overrideQuestionScore = async (req, res, next) => {
+    try {
+        const teacherId = req.user.id;
+        const { submissionId, questionId } = req.params;
+
+        // Validate input
+        const { error, value } = validateOverrideScore(req.body);
+        if (error) return next(error);
+
+        const data = await teacherService.overrideQuestionScore(teacherId, submissionId, questionId, value);
+
+        res.status(200).json(successResponse(data, "Ghi đè điểm thành công"));
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const deleteQuizAttempt = async (req, res, next) => {
+    try {
+        const teacherId = req.user.id;
+        const { submissionId } = req.params;
+
+        const data = await teacherService.deleteQuizAttempt(teacherId, submissionId);
+
+        res.status(200).json(successResponse(data, data.message));
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const regradeAllAttempts = async (req, res, next) => {
+    try {
+        const teacherId = req.user.id;
+        const { assessmentId } = req.params;
+
+        const data = await teacherService.regradeAllAttempts(teacherId, assessmentId);
+
+        res.status(200).json(successResponse(data, data.message));
+    } catch (error) {
+        next(error);
+    }
+};
+
+// --- UC_TEA_09: Soạn câu hỏi Quiz (Quiz Question CRUD) ---
+
+export const getQuizQuestions = async (req, res, next) => {
+    try {
+        const teacherId = req.user.id;
+        const { assessmentId } = req.params;
+
+        const data = await teacherService.getQuizQuestions(teacherId, assessmentId);
+        res.status(200).json(successResponse(data, "Lấy danh sách câu hỏi thành công"));
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const addQuizQuestion = async (req, res, next) => {
+    try {
+        const teacherId = req.user.id;
+        const { assessmentId } = req.params;
+
+        const { error, value } = validateCreateQuizQuestion(req.body);
+        if (error) return next(error);
+
+        const data = await teacherService.addQuizQuestion(teacherId, assessmentId, value);
+        res.status(201).json(successResponse(data, "Thêm câu hỏi thành công", 201));
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const updateQuizQuestion = async (req, res, next) => {
+    try {
+        const teacherId = req.user.id;
+        const { questionId } = req.params;
+
+        const { error, value } = validateUpdateQuizQuestion(req.body);
+        if (error) return next(error);
+
+        const data = await teacherService.updateQuizQuestion(teacherId, questionId, value);
+        res.status(200).json(successResponse(data, "Cập nhật câu hỏi thành công"));
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const deleteQuizQuestion = async (req, res, next) => {
+    try {
+        const teacherId = req.user.id;
+        const { questionId } = req.params;
+
+        const data = await teacherService.deleteQuizQuestion(teacherId, questionId);
+        res.status(200).json(successResponse(data, data.message));
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const bulkAddQuizQuestions = async (req, res, next) => {
+    try {
+        const teacherId = req.user.id;
+        const { assessmentId } = req.params;
+
+        const { error, value } = validateBulkCreateQuizQuestions(req.body);
+        if (error) return next(error);
+
+        const data = await teacherService.bulkAddQuizQuestions(teacherId, assessmentId, value.questions);
+        res.status(201).json(successResponse(data, data.message, 201));
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const generateAiQuiz = async (req, res, next) => {
+    try {
+        const teacherId = req.user.id;
+        const { assessmentId } = req.params;
+
+        const { error, value } = validateGenerateAiQuiz(req.body);
+        if (error) return next(error);
+
+        const data = await teacherService.generateAiQuizQuestions(teacherId, assessmentId, value);
+        res.status(200).json(successResponse(data, "Đã tạo câu hỏi AI thành công. Vui lòng rà soát lại trước khi lưu."));
+    } catch (error) {
+        next(error);
     }
 };

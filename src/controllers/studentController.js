@@ -128,3 +128,28 @@ export const submitAttempt = async (req, res, next) => {
         next(e);
     }
 };
+
+// --- UC_STU_11: Xem bảng điểm (Gradebook) ---
+
+export const getClassGradebook = async (req, res, next) => {
+    try {
+        const studentId = req.user.id;
+        const { classId } = req.params;
+
+        const data = await studentService.getClassGradebook(studentId, classId);
+        return res.status(200).json(successResponse(data, "Lấy bảng điểm thành công"));
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getGradesOverview = async (req, res, next) => {
+    try {
+        const studentId = req.user.id;
+
+        const data = await studentService.getGradesOverview(studentId);
+        return res.status(200).json(successResponse(data, "Lấy tổng quan điểm thành công"));
+    } catch (error) {
+        next(error);
+    }
+};

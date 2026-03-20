@@ -832,5 +832,175 @@ export const adminService = {
                 assignmentsGraded: total_graded     || 0
             }
         };
+    },
+
+    validateScheduleImport: async (rows) => {
+        if (!rows || !Array.isArray(rows) || rows.length === 0) {
+            throw new ConflictError("Danh sách dòng dữ liệu rỗng");
+        }
+
+        const classNames = [...new Set(rows.map(r => r.class_name?.trim()).filter(Boolean))];
+        const teacherEmails = [...new Set(rows.map(r => r.teacher_email?.trim()).filter(Boolean))];
+
+        const classes = await Class.findAll({ where: { name: classNames } });
+        const teachers = await User.findAll({
+            where: { email: teacherEmails, status: "active" },
+            include: [{ model: Role, as: "role", where: { code: "TEACHER" } }]
+        });
+
+        const classMap = {};
+        classes.forEach(c => classMap[c.name.toLowerCase()] = c);
+
+        const teacherMap = {};
+        teachers.forEach(t => teacherMap[t.email.toLowerCase()] = t);
+
+        const teacherIds = teachers.map(t => t.id);
+        const rooms = [...new Set(rows.map(r => r.room?.trim()).filter(Boolean))];
+
+        const dbSessions = await ClassSession.findAll({
+            where: {
+                status: "scheduled",
+                [Sequelize.Op.or]: [
+                    { room: { [Sequelize.Op.in]: rooms } },
+                    { "$class.teacher_id$": { [Sequelize.Op.in]: teacherIds } }
+                ]
+            },
+            include: [{ model: Class, as: "class", attributes: ["teacher_id"] }]
+        });
+
+        const activeSchedules = dbSessions.map(s => ({
+            start: new Date(s.start_time).getTime(),
+            end: new Date(s.end_time).getTime(),
+            room: s.room ? s.room.trim().toLowerCase() : "",
+            teacher_id: s.class?.teacher_id || null
+        }));
+
+        const validRows = [];
+        const invalidRows = [];
+
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const rowNum = i + 1;
+            let errors = [];
+
+            const cName = row.class_name?.trim() || "";
+            const tEmail = row.teacher_email?.trim() || "";
+            const dateStr = row.date?.trim() || "";
+            const startStr = row.start_time?.trim() || "";
+            const endStr = row.end_time?.trim() || "";
+            const roomNum = row.room?.trim() || "";
+            const topicStr = row.topic?.trim() || "Class session";
+
+            if (!cName) errors.push("Thiếu Tên lớp");
+            if (!tEmail) errors.push("Thiếu Email Giảng viên");
+            if (!dateStr) errors.push("Thiếu Ngày học");
+            if (!startStr) errors.push("Thiếu Giờ bắt đầu");
+            if (!endStr) errors.push("Thiếu Giờ kết thúc");
+
+            if (errors.length > 0) {
+                invalidRows.push({ ...row, rowNum, error: errors.join(", ") });
+                continue;
+            }
+
+            const cls = classMap[cName.toLowerCase()];
+            const teacher = teacherMap[tEmail.toLowerCase()];
+
+            if (!cls) errors.push(`Lớp '${cName}' không tồn tại hoặc không Active`);
+            if (!teacher) errors.push(`Giảng viên '${tEmail}' không tồn tại hoặc không Active`);
+
+            if (errors.length > 0) {
+                invalidRows.push({ ...row, rowNum, error: errors.join(", ") });
+                continue;
+            }
+
+            const dateParts = dateStr.split("/");
+            if (dateParts.length !== 3) {
+                invalidRows.push({ ...row, rowNum, error: "Định dạng ngày phải là dd/MM/yyyy" });
+                continue;
+            }
+            const day = dateParts[0].trim().padStart(2, '0');
+            const month = dateParts[1].trim().padStart(2, '0');
+            let year = dateParts[2].trim();
+            if (year.length === 2) year = "20" + year; // Convert 2-digit to 4-digit year
+            const dateISO = `${year}-${month}-${day}`; // yyyy-MM-dd
+
+            const padTime = (t) => {
+                const parts = t.split(":");
+                if (parts.length < 2) return t;
+                return `${parts[0].trim().padStart(2, '0')}:${parts[1].trim().padStart(2, '0')}`;
+            };
+            const startStrPadded = padTime(startStr);
+            const endStrPadded = padTime(endStr);
+
+            const sessionStart = new Date(`${dateISO}T${startStrPadded}:00`);
+            const sessionEnd = new Date(`${dateISO}T${endStrPadded}:00`);
+
+            if (isNaN(sessionStart.getTime()) || isNaN(sessionEnd.getTime())) {
+                invalidRows.push({ ...row, rowNum, error: "Định dạng Ngày/Giờ không hợp lệ" });
+                continue;
+            }
+
+            if (sessionEnd <= sessionStart) {
+                invalidRows.push({ ...row, rowNum, error: "Giờ kết thúc phải sau Giờ bắt đầu" });
+                continue;
+            }
+
+            const tStart = sessionStart.getTime();
+            const tEnd = sessionEnd.getTime();
+
+            let isOverlap = false;
+            let overlapReason = "";
+
+            for (const s of activeSchedules) {
+                const overlap = Math.max(tStart, s.start) < Math.min(tEnd, s.end);
+                if (overlap) {
+                    if (roomNum && s.room === roomNum.toLowerCase()) {
+                        isOverlap = true;
+                        overlapReason = `Trùng lịch sử dụng Phòng ${roomNum}`;
+                        break;
+                    }
+                    if (teacher.id === s.teacher_id) {
+                        isOverlap = true;
+                        overlapReason = `Giảng viên ${tEmail} bị trùng lịch dạy`;
+                        break;
+                    }
+                }
+            }
+
+            if (isOverlap) {
+                invalidRows.push({ ...row, rowNum, error: overlapReason });
+            } else {
+                const validItem = {
+                    class_id: cls.id,
+                    start_time: sessionStart,
+                    end_time: sessionEnd,
+                    room: roomNum,
+                    topic: topicStr,
+                    status: "scheduled",
+                    class_name: cName,
+                    teacher_email: tEmail,
+                    date: dateStr,
+                    original_start: startStr,
+                    original_end: endStr
+                };
+                validRows.push(validItem);
+                activeSchedules.push({ start: tStart, end: tEnd, room: roomNum.toLowerCase(), teacher_id: teacher.id });
+            }
+        }
+
+        return {
+            total: rows.length,
+            valid_count: validRows.length,
+            invalid_count: invalidRows.length,
+            validRows,
+            invalidRows
+        };
+    },
+
+    confirmScheduleImport: async (validRows) => {
+        if (!validRows || validRows.length === 0) {
+            throw new ConflictError("Không có dòng dữ liệu hợp lệ để Import");
+        }
+        return await ClassSession.bulkCreate(validRows);
     }
 };

@@ -156,5 +156,21 @@ export const adminController = {
             const data = await adminService.getTeacherActivity(semester, course, dateRange);
             res.status(200).json({ success: true, data });
         } catch (error) { next(error); }
+    },
+
+    // --- SCHEDULE IMPORT ---
+    validateScheduleImport: async (req, res, next) => {
+        try {
+            const { rows } = req.body;
+            const data = await adminService.validateScheduleImport(rows);
+            res.status(200).json({ success: true, data });
+        } catch (error) { next(error); }
+    },
+    confirmScheduleImport: async (req, res, next) => {
+        try {
+            const { validRows } = req.body;
+            await adminService.confirmScheduleImport(validRows);
+            res.status(201).json({ success: true, message: "Import lịch học thành công" });
+        } catch (error) { next(error); }
     }
 };

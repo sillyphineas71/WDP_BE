@@ -20,9 +20,15 @@ import { Op } from "sequelize";
 import { AppError, ConflictError, NotFoundError } from "../errors/AppError.js";
 
 /**
- * Parse quiz settings from instructions (UC_TEA_08 lưu meta vào instructions)
+ * Parse quiz settings - reads from settings_json (JSONB) first,
+ * falls back to parsing [quiz_settings] block in instructions text
  */
-function parseQuizSettings(instructions) {
+function parseQuizSettings(instructions, settingsJson) {
+    // Prefer structured JSONB column
+    if (settingsJson && typeof settingsJson === 'object' && Object.keys(settingsJson).length > 0) {
+        return settingsJson;
+    }
+    // Fallback: parse from instructions text
     if (!instructions) return {};
     const marker = "[quiz_settings]";
     const idx = instructions.lastIndexOf(marker);
@@ -108,7 +114,7 @@ async function loadQuizWithQuestions(quizId) {
 
 async function ensureStudentEnrolled(studentId, classId) {
     const enr = await Enrollment.findOne({
-        where: { student_id: studentId, class_id: classId, status: "active" },
+        where: { user_id: studentId, class_id: classId, status: "active" },
     });
     if (!enr) throw new AppError("Bạn chưa tham gia lớp học này", 403);
 }
@@ -225,12 +231,17 @@ async function autoGradeAndFinalize({ submission, quiz, settings, transaction })
         );
     }
 
+    const timeTakenSeconds = submission.started_at 
+        ? Math.floor((new Date().getTime() - new Date(submission.started_at).getTime()) / 1000)
+        : null;
+
     return {
         submissionId: submission.id,
         status: submission.status,
         totalScore,
         maxScore,
         isPublished,
+        timeTakenSeconds,
         message: isPublished
             ? "Đã nộp bài và có điểm"
             : "Đã nộp bài. Điểm sẽ hiển thị sau khi đóng đề",
@@ -276,20 +287,53 @@ export const studentService = {
         if (enrolledClassIds.length === 0) {
             return {
                 classes: [],
-                upcomingAssessments: 0,
+                upcomingAssessmentsCount: 0,
+                upcomingAssessments: [],
                 todaySessions: [],
-                recentGrades: []
+                recentActivities: []
             };
         }
 
-        // 2. Count upcoming assessments
-        const upcomingAssessments = await Assessment.count({
+        // 2. Count AND Get upcoming assessments in 7 days
+        const next7Days = new Date();
+        next7Days.setDate(next7Days.getDate() + 7);
+
+        // Find assessments that the student has already submitted/graded
+        const completedSubmissions = await Submission.findAll({
             where: {
-                class_id: { [Op.in]: enrolledClassIds },
-                status: "published",
-                due_at: { [Op.gte]: new Date() },
+                student_id: studentId,
+                status: { [Op.ne]: 'in_progress' }
             },
+            attributes: ['assessment_id'],
+            raw: true
         });
+        const completedAssessmentIds = completedSubmissions.map(s => s.assessment_id);
+
+        const whereClause = {
+            class_id: { [Op.in]: enrolledClassIds },
+            status: "published",
+            due_at: { [Op.between]: [new Date(), next7Days] },
+        };
+
+        if (completedAssessmentIds.length > 0) {
+            whereClause.id = { [Op.notIn]: completedAssessmentIds };
+        }
+
+        const upcomingAssessmentsList = await Assessment.findAll({
+            where: whereClause,
+            include: [{ model: Class, as: "class", attributes: ["name"] }],
+            order: [["due_at", "ASC"]],
+        });
+
+        const formattedAssessments = upcomingAssessmentsList.map(a => ({
+            id: a.id,
+            title: a.title,
+            type: a.type,
+            className: a.class?.name || "N/A",
+            dueAt: a.due_at,
+            dueFormatted: a.due_at ? new Date(a.due_at).toLocaleDateString('vi-VN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'No due date',
+            isUrgent: a.due_at ? (new Date(a.due_at) - new Date() < 24 * 60 * 60 * 1000) : false
+        }));
 
         // 3. Get today's schedule
         const startOfDay = new Date();
@@ -302,13 +346,7 @@ export const studentService = {
                 class_id: { [Op.in]: enrolledClassIds },
                 start_time: { [Op.between]: [startOfDay, endOfDay] },
             },
-            include: [
-                {
-                    model: Class,
-                    as: "class",
-                    attributes: ["id", "name"],
-                },
-            ],
+            include: [{ model: Class, as: "class", attributes: ["id", "name"] }],
             order: [["start_time", "ASC"]],
         });
 
@@ -317,21 +355,77 @@ export const studentService = {
             title: session.class.name,
             date: session.start_time.toLocaleDateString('vi-VN'),
             time: `${session.start_time.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - ${session.end_time.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`,
-            location: `Room ${session.room || 'TBA'}`
+            location: `Phòng ${session.room || 'TBA'}`
         }));
 
-        const formattedClasses = enrollments.map(e => ({
-            id: e.class.id,
-            name: e.class.name,
-            teacher: e.class.teacher ? e.class.teacher.full_name : "N/A",
-            room: e.class.sessions?.[0]?.room || "TBA"
+        // 4. Get Course Progress for list
+        const formattedClasses = await Promise.all(enrollments.map(async e => {
+            const classId = e.class.id;
+            const totalSesh = await ClassSession.count({ where: { class_id: classId } });
+            const completedSesh = await ClassSession.count({ where: { class_id: classId, start_time: { [Op.lt]: new Date() } } });
+            const progressPercent = totalSesh === 0 ? 0 : Math.round((completedSesh / totalSesh) * 100);
+
+            return {
+                id: classId,
+                name: e.class.name,
+                teacher: e.class.teacher ? e.class.teacher.full_name : "N/A",
+                room: e.class.sessions?.[0]?.room || "TBA",
+                progress: progressPercent
+            };
         }));
+
+        // 5. Get Recent Activities (Grades & Materials)
+        const recentGrades = await Grade.findAll({
+            include: [
+                {
+                    model: Submission,
+                    as: "submission",
+                    where: { student_id: studentId },
+                    include: [{ model: Assessment, as: "assessment", attributes: ["id", "title"] }]
+                }
+            ],
+            where: { is_published: true },
+            order: [["graded_at", "DESC"]],
+            limit: 3
+        });
+        
+        const formattedGrades = recentGrades.map(g => ({
+            id: g.id,
+            type: "grade",
+            title: `Đã công bố điểm cho ${g.submission?.assessment?.title || 'Bài tập'}`,
+            detail: `Điểm: ${g.final_score}`,
+            timestamp: g.graded_at
+        }));
+
+        const recentMaterials = await Material.findAll({
+            where: { class_id: { [Op.in]: enrolledClassIds } },
+            include: [{ model: Class, as: "class", attributes: ["name"] }],
+            order: [["created_at", "DESC"]],
+            limit: 3
+        });
+
+        const formattedMaterials = recentMaterials.map(m => ({
+            id: m.id,
+            type: "material",
+            title: `Tài liệu mới: ${m.title}`,
+            detail: m.class?.name || "",
+            timestamp: m.created_at
+        }));
+
+        const recentActivities = [...formattedGrades, ...formattedMaterials]
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+            .slice(0, 5)
+            .map(act => ({
+                ...act,
+                date: new Date(act.timestamp).toLocaleDateString('vi-VN', { month: '2-digit', day: '2-digit' })
+            }));
 
         return {
             classes: formattedClasses,
-            upcomingAssessments,
+            upcomingAssessmentsCount: formattedAssessments.length,
+            upcomingAssessments: formattedAssessments,
             todaySessions: formattedSessions,
-            recentGrades: []
+            recentActivities
         };
     },
 
@@ -366,12 +460,13 @@ export const studentService = {
 
             // Format schedule from sessions
             const schedule = (c.sessions || []).map(s => {
-                const dayOptions = { weekday: 'short' };
+                const dayOptions = { weekday: 'long' };
                 const timeOptions = { hour: '2-digit', minute: '2-digit' };
                 return {
-                    day: s.start_time.toLocaleDateString('en-US', dayOptions),
-                    time: `${s.start_time.toLocaleTimeString('en-US', timeOptions)} - ${s.end_time.toLocaleTimeString('en-US', timeOptions)}`,
-                    room: s.room
+                    day: s.start_time.toLocaleDateString('vi-VN', dayOptions),
+                    time: `${s.start_time.toLocaleTimeString('vi-VN', timeOptions)} - ${s.end_time.toLocaleTimeString('vi-VN', timeOptions)}`,
+                    room: s.room || 'TBA',
+                    rawDate: s.start_time
                 };
             });
 
@@ -443,8 +538,9 @@ export const studentService = {
             room: cl.sessions?.[0]?.room || "TBA",
             studentsCount,
             schedule: (cl.sessions || []).map(s => ({
-                day: s.start_time.toLocaleDateString('en-US', { weekday: 'long' }),
-                time: `${s.start_time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - ${s.end_time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`,
+                day: s.start_time.toLocaleDateString('vi-VN', { weekday: 'long' }),
+                time: `${s.start_time.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - ${s.end_time.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`,
+                room: s.room || 'TBA'
             })),
             materials: materials.map(m => ({
                 id: m.id,
@@ -455,8 +551,9 @@ export const studentService = {
             assignments: assignments.map(a => ({
                 id: a.id,
                 title: a.title,
+                type: a.type,
                 due: a.due_at ? a.due_at.toLocaleString('en-US') : 'No due date',
-                points: a.type === 'QUIZ' ? '100' : '100',
+                points: Number(a.max_score) || 100,
             })),
             announcements: announcements.map(a => ({
                 id: a.id,
@@ -482,7 +579,7 @@ export const studentService = {
                 assessment_id: assessmentId,
                 student_id: studentId
             },
-            attributes: ['id', 'assessment_id', 'student_id', 'status', 'submitted_at', 'content_text'],
+            attributes: ['id', 'assessment_id', 'student_id', 'status', 'submitted_at', 'content_text', 'attempt_no'],
             include: [
                 {
                     model: Grade,
@@ -591,7 +688,7 @@ export const studentService = {
     // UC_STU_09 - Start/Resume attempt
     startOrResumeAttempt: async ({ studentId, quizId }) => {
         const quiz = await loadQuizWithQuestions(quizId);
-        const settings = parseQuizSettings(quiz.instructions);
+        const settings = parseQuizSettings(quiz.instructions, quiz.settings_json);
 
         await ensureStudentEnrolled(studentId, quiz.class_id);
         ensureQuizAvailable(quiz, settings);
@@ -792,7 +889,7 @@ export const studentService = {
         if (attempt.status !== "in_progress") throw new ConflictError("Attempt is not in progress");
 
         const quiz = await loadQuizWithQuestions(attempt.assessment_id);
-        const settings = parseQuizSettings(quiz.instructions);
+        const settings = parseQuizSettings(quiz.instructions, quiz.settings_json);
 
         // auto-submit if expired
         const expiresAt = computeExpiresAt(attempt.started_at, quiz.time_limit_minutes);
@@ -892,7 +989,7 @@ export const studentService = {
         if (String(attempt.student_id) !== String(studentId)) throw new AppError("Forbidden", 403);
 
         const quiz = await loadQuizWithQuestions(attempt.assessment_id);
-        const settings = parseQuizSettings(quiz.instructions);
+        const settings = parseQuizSettings(quiz.instructions, quiz.settings_json);
 
         if (attempt.status !== "in_progress") {
             throw new ConflictError("Attempt đã được nộp");
@@ -912,4 +1009,267 @@ export const studentService = {
             return result;
         });
     },
+
+    // ---------------------------------------------------------------
+    // UC_STU_11: Xem bảng điểm (Gradebook)
+    // ---------------------------------------------------------------
+
+    /**
+     * Normal Flow: Bảng điểm chi tiết của một lớp
+     * - Chỉ hiển thị điểm đã công bố (is_published = true)
+     * - Hiển thị structure cho tất cả assessments (kể cả chưa có điểm - E2)
+     * - Tính điểm tổng kết dựa trên trọng số (weight)
+     */
+    getClassGradebook: async (studentId, classId) => {
+        // 1. Kiểm tra enrollment (BR_01: chỉ xem điểm của chính mình)
+        const enrollment = await Enrollment.findOne({
+            where: { user_id: studentId, class_id: classId, status: 'active' }
+        });
+
+        if (!enrollment) {
+            throw new NotFoundError("Bạn chưa ghi danh vào lớp học này.");
+        }
+
+        // 2. Lấy thông tin lớp
+        const classInfo = await Class.findByPk(classId, {
+            include: [{
+                model: User,
+                as: 'teacher',
+                attributes: ['id', 'full_name']
+            }]
+        });
+
+        if (!classInfo) {
+            throw new NotFoundError("Không tìm thấy lớp học.");
+        }
+
+        // 3. Lấy tất cả assessments của lớp (không phải draft)
+        const assessments = await Assessment.findAll({
+            where: {
+                class_id: classId,
+                status: { [Op.ne]: 'draft' }
+            },
+            order: [['created_at', 'ASC']]
+        });
+
+        // 4. Lấy tất cả submissions + grades của sinh viên này trong lớp
+        const assessmentIds = assessments.map(a => a.id);
+
+        const submissions = await Submission.findAll({
+            where: {
+                assessment_id: { [Op.in]: assessmentIds },
+                student_id: studentId
+            },
+            include: [{
+                model: Grade,
+                as: 'grade'
+            }],
+            order: [['submitted_at', 'DESC']]
+        });
+
+        // Map: assessment_id -> best submission (hoặc submission mới nhất)
+        const submissionMap = {};
+        for (const sub of submissions) {
+            const aid = sub.assessment_id;
+            // Lấy submission có điểm cao nhất (grade method = highest)
+            if (!submissionMap[aid]) {
+                submissionMap[aid] = sub;
+            } else {
+                const currentScore = sub.grade?.final_score != null ? parseFloat(sub.grade.final_score) : -1;
+                const existingScore = submissionMap[aid].grade?.final_score != null
+                    ? parseFloat(submissionMap[aid].grade.final_score) : -1;
+                if (currentScore > existingScore) {
+                    submissionMap[aid] = sub;
+                }
+            }
+        }
+
+        // 5. Build grade items
+        let weightedScoreSum = 0;
+        let weightedMaxSum = 0;
+        let totalWeight = 0;
+
+        const gradeItems = assessments.map(assessment => {
+            const sub = submissionMap[assessment.id];
+            const grade = sub?.grade;
+            const maxScore = parseFloat(assessment.max_score) || 100;
+
+            // Parse settings_json for weight
+            let weight = null;
+            if (assessment.settings_json && assessment.settings_json.weight != null) {
+                weight = parseFloat(assessment.settings_json.weight);
+            }
+
+            // E1: Điểm chưa được công bố
+            const isPublished = !!grade?.is_published;
+
+            // Chỉ lấy điểm đã published
+            let score = null;
+            let feedback = null;
+            let status = 'no_submission'; // Chưa nộp bài
+
+            if (sub) {
+                if (sub.status === 'not_submitted') {
+                    status = 'not_submitted';
+                } else if (!grade) {
+                    status = 'submitted'; // Đã nộp, chưa chấm
+                } else if (!isPublished) {
+                    status = 'hidden'; // E1: Đã chấm nhưng chưa công bố
+                } else {
+                    status = 'published'; // Đã công bố
+                    score = parseFloat(grade.final_score);
+                    feedback = grade.final_feedback;
+                }
+            }
+
+            // Tính weighted sum (chỉ tính điểm đã published)
+            if (status === 'published' && weight != null && score != null) {
+                weightedScoreSum += (score / maxScore) * weight;
+                weightedMaxSum += weight;
+                totalWeight += weight;
+            } else if (weight != null) {
+                totalWeight += weight;
+            }
+
+            return {
+                assessment_id: assessment.id,
+                title: assessment.title,
+                type: assessment.type,
+                weight: weight,
+                max_score: maxScore,
+                score: score,
+                feedback: feedback,
+                status: status,
+                due_at: assessment.due_at,
+                submitted_at: sub?.submitted_at || null,
+                attempt_no: sub?.attempt_no || null
+            };
+        });
+
+        // 6. Tính điểm tổng kết (Course Total)
+        let courseTotal = null;
+        if (weightedMaxSum > 0) {
+            // Tính theo trọng số đã có điểm
+            courseTotal = Math.round((weightedScoreSum / weightedMaxSum) * 100 * 100) / 100;
+        } else {
+            // Fallback: Tính trung bình nếu không có weight
+            const publishedItems = gradeItems.filter(g => g.status === 'published' && g.score != null);
+            if (publishedItems.length > 0) {
+                const totalPercent = publishedItems.reduce((sum, g) => sum + (g.score / g.max_score) * 100, 0);
+                courseTotal = Math.round((totalPercent / publishedItems.length) * 100) / 100;
+            }
+        }
+
+        return {
+            class: {
+                id: classInfo.id,
+                name: classInfo.name,
+                teacher: classInfo.teacher?.full_name || 'N/A'
+            },
+            grade_items: gradeItems,
+            course_total: courseTotal,
+            total_weight: totalWeight
+        };
+    },
+
+    /**
+     * A1: Tổng quan điểm các môn (Grade Overview)
+     * Hiển thị tất cả lớp enrolled + điểm tổng kết hiện tại
+     */
+    getGradesOverview: async (studentId) => {
+        // 1. Lấy tất cả enrollments
+        const enrollments = await Enrollment.findAll({
+            where: { user_id: studentId, status: 'active' },
+            include: [{
+                model: Class,
+                as: 'class',
+                include: [{
+                    model: User,
+                    as: 'teacher',
+                    attributes: ['id', 'full_name']
+                }]
+            }]
+        });
+
+        const results = [];
+
+        for (const enrollment of enrollments) {
+            const cl = enrollment.class;
+
+            // Lấy assessments
+            const assessments = await Assessment.findAll({
+                where: {
+                    class_id: cl.id,
+                    status: { [Op.ne]: 'draft' }
+                }
+            });
+
+            const assessmentIds = assessments.map(a => a.id);
+
+            if (assessmentIds.length === 0) {
+                results.push({
+                    class_id: cl.id,
+                    class_name: cl.name,
+                    teacher: cl.teacher?.full_name || 'N/A',
+                    course_total: null,
+                    published_count: 0,
+                    total_assessments: 0
+                });
+                continue;
+            }
+
+            // Lấy submissions có grade published
+            const submissions = await Submission.findAll({
+                where: {
+                    assessment_id: { [Op.in]: assessmentIds },
+                    student_id: studentId
+                },
+                include: [{
+                    model: Grade,
+                    as: 'grade',
+                    where: { is_published: true },
+                    required: true
+                }]
+            });
+
+            // Giữ submission tốt nhất cho mỗi assessment
+            const bestByAssessment = {};
+            for (const sub of submissions) {
+                const aid = sub.assessment_id;
+                const score = parseFloat(sub.grade.final_score) || 0;
+                if (!bestByAssessment[aid] || score > bestByAssessment[aid].score) {
+                    bestByAssessment[aid] = { score, maxScore: 0 };
+                }
+            }
+
+            // Map max_score
+            for (const a of assessments) {
+                if (bestByAssessment[a.id]) {
+                    bestByAssessment[a.id].maxScore = parseFloat(a.max_score) || 100;
+                }
+            }
+
+            const publishedEntries = Object.values(bestByAssessment);
+            let courseTotal = null;
+
+            if (publishedEntries.length > 0) {
+                const totalPercent = publishedEntries.reduce(
+                    (sum, e) => sum + (e.score / e.maxScore) * 100, 0
+                );
+                courseTotal = Math.round((totalPercent / publishedEntries.length) * 100) / 100;
+            }
+
+            results.push({
+                class_id: cl.id,
+                class_name: cl.name,
+                teacher: cl.teacher?.full_name || 'N/A',
+                course_total: courseTotal,
+                published_count: publishedEntries.length,
+                total_assessments: assessments.length
+            });
+        }
+
+        return results;
+    }
 };
+

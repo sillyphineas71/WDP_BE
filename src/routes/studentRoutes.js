@@ -10,7 +10,9 @@ import {
     getAttempt,
     saveAnswer,
     getSummary,
-    submitAttempt
+    submitAttempt,
+    getClassGradebook,
+    getGradesOverview
 } from "../controllers/studentController.js";
 import { isAuth, authorize } from "../middleware/isAuth.js";
 import { USER_ROLES } from "../constants/roles.js";
@@ -94,5 +96,22 @@ router.get("/materials/:materialId", isAuth, authorize(USER_ROLES.STUDENT), mate
 
 // Download / redirect URL
 router.get("/materials/:materialId/download", isAuth, authorize(USER_ROLES.STUDENT), materialCtrl.downloadMaterial);
+
+// -----------------------------------------------------------------
+// UC_STU_12: Xem nhận xét (điểm + feedback GV + AI)
+// -----------------------------------------------------------------
+import { studentGradeController } from "../controllers/studentGradeController.js";
+
+router.get("/grades/overview", isAuth, authorize(USER_ROLES.STUDENT), studentGradeController.getGradesOverview);
+router.get("/classes/:classId/grades", isAuth, authorize(USER_ROLES.STUDENT), studentGradeController.getClassGrades);
+
+// UC_STU_11: Xem bảng điểm (Gradebook)
+// -----------------------------------------------------------------
+// (Từ nam-branch - Tạm đóng để dùng controller riêng studentGradeController)
+// Bảng điểm chi tiết của một lớp (Normal Flow)
+// router.get("/classes/:classId/grades", isAuth, authorize(USER_ROLES.STUDENT), getClassGradebook);
+
+// Tổng quan điểm tất cả các môn (A1: Grade Overview)
+// router.get("/grades/overview", isAuth, authorize(USER_ROLES.STUDENT), getGradesOverview);
 
 export default router;

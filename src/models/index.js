@@ -104,6 +104,15 @@ export function initModels(sequelize) {
   Assessment.hasMany(Submission, { foreignKey: "assessment_id", as: "submissions" });
   Submission.belongsTo(Assessment, { foreignKey: "assessment_id", as: "assessment" });
 
+  // QuizQuestion & QuizOption (UC_TEA_13)
+  QuizQuestion.hasMany(QuizOption, { foreignKey: "question_id", as: "options" });
+  QuizOption.belongsTo(QuizQuestion, { foreignKey: "question_id", as: "question" });
+
+  // SubmissionAnswer & QuizQuestion / QuizOption (UC_TEA_13)
+  SubmissionAnswer.belongsTo(QuizQuestion, { foreignKey: "question_id", as: "question" });
+  QuizQuestion.hasMany(SubmissionAnswer, { foreignKey: "question_id", as: "submissionAnswers" });
+  SubmissionAnswer.belongsTo(QuizOption, { foreignKey: "selected_option_id", as: "selectedOption" });
+
   // Submission & Answers/Files/Grades
   Submission.hasMany(SubmissionAnswer, { foreignKey: "submission_id", as: "answers" });
   SubmissionAnswer.belongsTo(Submission, { foreignKey: "submission_id", as: "submission" });

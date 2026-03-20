@@ -360,6 +360,9 @@ export const listClassSessions = async (query) => {
     from,
     to,
     group_by,
+    room,
+    semester,
+    all,
     page = 1,
     limit = 20,
   } = query;
@@ -375,9 +378,10 @@ export const listClassSessions = async (query) => {
     );
   }
 
-  const pageNum = Math.max(1, Number(page) || 1);
-  const limitNum = Math.min(100, Math.max(1, Number(limit) || 20));
-  const offset = (pageNum - 1) * limitNum;
+  const isAll = all === 'true' || limit === '-1';
+  const pageNum = isAll ? undefined : Math.max(1, Number(page) || 1);
+  const limitNum = isAll ? undefined : Math.min(100, Math.max(1, Number(limit) || 20));
+  const offset = isAll ? undefined : (pageNum - 1) * limitNum;
 
   const sessionWhere = {};
   if (status) sessionWhere.status = status;
@@ -386,9 +390,11 @@ export const listClassSessions = async (query) => {
   if (to) sessionWhere.end_time = { [Op.lte]: parseISO(to, "to") };
 
   if (class_id) sessionWhere.class_id = class_id;
+  if (room) sessionWhere.room = room;
 
   const classWhere = {};
   if (teacher_id) classWhere.teacher_id = teacher_id;
+  if (semester) classWhere.semester = semester;
 
   const courseCodeField = getCourseCodeField();
 
@@ -435,7 +441,7 @@ export const listClassSessions = async (query) => {
 
   const rows = result.rows || [];
   const total = result.count || 0;
-  const totalPages = Math.ceil(total / limitNum);
+  const totalPages = isAll ? 1 : Math.ceil(total / (limitNum || 1));
 
   // nếu không group_by => trả list bình thường
   if (!group_by) {
