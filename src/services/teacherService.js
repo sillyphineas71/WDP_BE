@@ -171,6 +171,84 @@ export const teacherService = {
     },
 
     /**
+     * GET quiz detail
+     */
+    getQuizDetail: async (teacherId, classId, quizId) => {
+        const quiz = await Assessment.findOne({
+            where: { id: quizId, class_id: classId, type: "QUIZ" },
+        });
+
+        if (!quiz) throw new NotFoundError("Quiz not found");
+
+        // Verify teacher ownership
+        const clazz = await Class.findByPk(classId);
+        if (!clazz || String(clazz.teacher_id) !== String(teacherId)) {
+            throw new AppError("Forbidden: not owner teacher of this class", 403);
+        }
+
+        return quiz;
+    },
+
+    /**
+     * UC_TEA_08: Update QUIZ assessment
+     */
+    updateQuiz: async (teacherId, classId, quizId, payload) => {
+        const clazz = await Class.findByPk(classId);
+        if (!clazz) throw new NotFoundError("Class not found");
+        if (String(clazz.teacher_id) !== String(teacherId)) {
+            throw new AppError("Forbidden: not owner teacher of this class", 403);
+        }
+
+        const quiz = await Assessment.findOne({
+            where: { id: quizId, class_id: classId, type: "QUIZ" }
+        });
+        if (!quiz) throw new NotFoundError("Quiz not found");
+
+        let attemptLimit = payload.attemptLimit ?? quiz.attempt_limit;
+        if (attemptLimit === 0) attemptLimit = null;
+        if (attemptLimit !== null && attemptLimit < 1) {
+            throw new ValidationError("attemptLimit must be >= 1 (or 0 for unlimited)");
+        }
+
+        const timeLimit = payload.timeLimitMinutes !== undefined ? payload.timeLimitMinutes : quiz.time_limit_minutes;
+        const dueAt = payload.closeAt !== undefined ? payload.closeAt : quiz.due_at;
+        
+        const currentSettings = quiz.settings_json || {};
+        const settingsMeta = {
+            openAt: payload.openAt !== undefined ? payload.openAt : currentSettings.openAt,
+            closeAt: payload.closeAt !== undefined ? payload.closeAt : currentSettings.closeAt,
+            gradeMethod: payload.gradeMethod ?? currentSettings.gradeMethod ?? "highest",
+            shuffleQuestions: payload.shuffleQuestions !== undefined ? !!payload.shuffleQuestions : !!currentSettings.shuffleQuestions,
+            reviewOption: payload.reviewOption ?? currentSettings.reviewOption ?? "after_submit"
+        };
+
+        const instructions = buildInstructionsWithMeta(
+            payload.instructions !== undefined ? payload.instructions : quiz.instructions?.split("\n\n---")[0] || "",
+            settingsMeta
+        );
+
+        return await sequelize.transaction(async (t) => {
+            await quiz.update({
+                title: payload.title || quiz.title,
+                instructions,
+                due_at: dueAt,
+                time_limit_minutes: timeLimit,
+                attempt_limit: attemptLimit,
+                settings_json: settingsMeta,
+                status: payload.status || quiz.status
+            }, { transaction: t });
+            
+            return {
+                id: quiz.id,
+                type: quiz.type,
+                status: quiz.status,
+                classId,
+                next: `/teacher/classes/${classId}/quizzes/${quiz.id}/questions`
+            };
+        });
+    },
+
+    /**
      * UC_TEA_10: Create ESSAY assessment (Assignment) - dev branch
      */
     createAssignment: async (teacherId, classId, payload) => {

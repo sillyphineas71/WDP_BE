@@ -27,7 +27,9 @@ import {
   deleteQuizQuestion,
   bulkAddQuizQuestions,
   generateAiQuiz,
-  updateQuizStatus
+  updateQuizStatus,
+  getQuizDetail,
+  updateQuiz
 } from "../controllers/teacherController.js";
 import { isAuth, authorize } from "../middleware/isAuth.js";
 import { USER_ROLES } from "../constants/roles.js";
@@ -47,6 +49,22 @@ router.post(
   isAuth,
   authorize(USER_ROLES.TEACHER),
   createQuiz,
+);
+
+// Lấy chi tiết Quiz
+router.get(
+  "/classes/:classId/quizzes/:quizId",
+  isAuth,
+  authorize(USER_ROLES.TEACHER),
+  getQuizDetail,
+);
+
+// Cập nhật Quiz
+router.put(
+  "/classes/:classId/quizzes/:quizId",
+  isAuth,
+  authorize(USER_ROLES.TEACHER),
+  updateQuiz,
 );
 
 // Lấy danh sách Quizzes trong lớp
