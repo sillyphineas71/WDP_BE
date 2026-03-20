@@ -104,6 +104,7 @@ export const teacherService = {
                     due_at: dueAt,
                     time_limit_minutes: timeLimit,
                     attempt_limit: attemptLimit,
+                    settings_json: settingsMeta,
                     status: "draft"
                 },
                 { transaction: t }
