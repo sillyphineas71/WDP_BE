@@ -246,7 +246,7 @@ export const adminService = {
 
     // --- ADD SESSION ---
     addSession: async (classId, sessionData) => {
-        const { day_of_week, start_time, end_time, room } = sessionData;
+        const { day_of_week, start_time, end_time, room, teacher_id } = sessionData;
         const cls = await Class.findByPk(classId);
         if (!cls) throw new NotFoundError("Lớp học không tồn tại");
 
@@ -255,20 +255,31 @@ export const adminService = {
         }
 
         const dayMap = {
-            "Sunday": 0, "Monday": 1, "Tuesday": 2, "Wednesday": 3, "Thursday": 4, "Friday": 5, "Saturday": 6
+            "Sunday": 0, "Monday": 1, "Tuesday": 2, "Wednesday": 3, "Thursday": 4, "Friday": 5, "Saturday": 6,
+            "Chủ Nhật": 0, "Thứ Hai": 1, "Thứ Ba": 2, "Thứ Tư": 3, "Thứ Năm": 4, "Thứ Sáu": 5, "Thứ Bảy": 6,
+            "CN": 0, "T2": 1, "T3": 2, "T4": 3, "T5": 4, "T6": 5, "T7": 6
         };
         const targetDay = dayMap[day_of_week];
 
-        let currentDate = new Date(cls.start_date);
-        const endDate = new Date(cls.end_date);
+        if (targetDay === undefined) {
+             throw new ConflictError(`Thứ '${day_of_week}' không hợp lệ. Vui lòng chọn một ngày trong tuần.`);
+        }
+
+        let currentDate = new Date(cls.start_date + "T00:00:00");
+        const endDate = new Date(cls.end_date + "T00:00:00");
         
         const sessionsToCreate = [];
 
         while (currentDate <= endDate) {
             if (currentDate.getDay() === targetDay) {
-                const dateStr = currentDate.toISOString().split('T')[0];
-                const sessionStart = new Date(`${dateStr}T${start_time}:00`);
-                const sessionEnd = new Date(`${dateStr}T${end_time}:00`);
+                // Formatting date string locally (YYYY-MM-DD)
+                const Y = currentDate.getFullYear();
+                const M = String(currentDate.getMonth() + 1).padStart(2, '0');
+                const D = String(currentDate.getDate()).padStart(2, '0');
+                const dateStr = `${Y}-${M}-${D}`;
+
+                const sessionStart = new Date(`${dateStr}T${start_time}:00+07:00`);
+                const sessionEnd = new Date(`${dateStr}T${end_time}:00+07:00`);
                 
                 sessionsToCreate.push({
                     class_id: classId,
@@ -283,10 +294,17 @@ export const adminService = {
         }
 
         if (sessionsToCreate.length === 0) {
-            throw new ConflictError("Khoảng thời gian của lớp học quá ngắn, không có ngày nào phù hợp");
+            throw new ConflictError(`Khoảng thời gian của lớp học (${cls.start_date} - ${cls.end_date}) quá ngắn, không có ngày ${day_of_week} nào phù hợp.`);
         }
 
-        return await ClassSession.bulkCreate(sessionsToCreate);
+        const sessions = await ClassSession.bulkCreate(sessionsToCreate);
+
+        // Map the session-level teacher selection to the Class level teacher
+        if (teacher_id !== undefined) {
+            await adminService.assignTeacher(classId, teacher_id || null);
+        }
+
+        return sessions;
     },
 
     // --- DELETE SESSIONS (GROUP - SOFT DELETE) ---
@@ -307,21 +325,38 @@ export const adminService = {
 
     // --- EDIT SESSIONS (GROUP) ---
     editSessions: async (classId, sessionData) => {
-        const { sessionIds, day_of_week, start_time, end_time, room } = sessionData;
+        const { sessionIds, day_of_week, start_time, end_time, room, teacher_id } = sessionData;
         if (!sessionIds || sessionIds.length === 0) {
             throw new ConflictError("Vui lòng cung cấp danh sách buổi học cần sửa");
         }
         
-        // Strategy: To cleanly handle date shifts when day_of_week changes,
-        // we delete the existing specific sessions and recreate them based on the new logic.
-        // NOTE: If attendance or materials existed, this would CASCADE delete them.
-        // For a more robust enterprise system, we would carefully update offsets,
-        // but for this MVP, deleting and regenerating the schedule group is the cleanest approach.
-        
+        // Pre-check to avoid "Delete then Fail" scenario (Conflict 409)
+        const cls = await Class.findByPk(classId);
+        if (!cls) throw new NotFoundError("Lớp học không tồn tại");
+
+        const dayMap = {
+            "Sunday": 0, "Monday": 1, "Tuesday": 2, "Wednesday": 3, "Thursday": 4, "Friday": 5, "Saturday": 6,
+            "Chủ Nhật": 0, "Thứ Hai": 1, "Thứ Ba": 2, "Thứ Tư": 3, "Thứ Năm": 4, "Thứ Sáu": 5, "Thứ Bảy": 6,
+            "CN": 0, "T2": 1, "T3": 2, "T4": 3, "T5": 4, "T6": 5, "T7": 6
+        };
+        const targetDay = dayMap[day_of_week];
+
+        let currentDate = new Date(cls.start_date + "T00:00:00");
+        const endDate = new Date(cls.end_date + "T00:00:00");
+        let sampleCount = 0;
+        while (currentDate <= endDate) {
+            if (currentDate.getDay() === targetDay) sampleCount++;
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
+
+        if (sampleCount === 0) {
+            throw new ConflictError(`Lớp học (${cls.start_date} - ${cls.end_date}) không chứa ngày ${day_of_week} nào. Vui lòng kiểm tra lại cấu hình Ngày bắt đầu/kết thúc của lớp.`);
+        }
+
         await adminService.deleteSessions(classId, sessionIds);
         
         // Regenerate completely new sessions for the updated schedule
-        return await adminService.addSession(classId, { day_of_week, start_time, end_time, room });
+        return await adminService.addSession(classId, { day_of_week, start_time, end_time, room, teacher_id });
     },
 
     // --- STUDENTS ---
@@ -516,21 +551,21 @@ export const adminService = {
         });
         let studentsByCourseData = Object.keys(courseMap).slice(0, 4).map(k => ({ name: k, students: courseMap[k] }));
         if (studentsByCourseData.length === 0) {
-             studentsByCourseData = [{ name: "No Data", students: 0 }];
+             studentsByCourseData = [{ name: "Không có dữ liệu", students: 0 }];
         }
 
         // recentActivities
         const recentClasses = await Class.findAll({ order: [['created_at', 'DESC']], limit: 5 });
         const recentActivities = recentClasses.map((c, i) => ({
             id: c.id,
-            action: `Class ${c.status === 'active' ? 'created' : 'updated'}`,
-            details: `System - ${c.name}`,
-            time: new Date(c.created_at).toLocaleDateString(),
+            action: `Lớp học được ${c.status === 'active' ? 'tạo mới' : 'cập nhật'}`,
+            details: `Hệ thống - ${c.name}`,
+            time: new Date(c.created_at).toLocaleDateString("vi-VN"),
             color: c.status === 'active' ? "bg-green-500" : "bg-blue-500"
         }));
 
         if (recentActivities.length === 0) {
-             recentActivities.push({ id: 1, action: "System Initialization", details: "All functional", time: "Now", color: "bg-blue-500" });
+             recentActivities.push({ id: 1, action: "Khởi tạo hệ thống", details: "Mọi tính năng sẵn sàng", time: "Hiện tại", color: "bg-blue-500" });
         }
 
         return {
@@ -683,11 +718,20 @@ export const adminService = {
         };
         const dateFrom = dateRangeMap[dateRange] || `DATE_TRUNC('month', NOW())`;
 
-        // Number of time buckets (weeks) based on range
-        const numBuckets = (dateRange === 'This Week') ? 7 : 4;
-        const bucketInterval = (dateRange === 'This Week') ? `1 day` : `7 days`;
-        const totalInterval = (dateRange === 'This Week') ? `7 days` : `28 days`;
-        const bucketLabel = (dateRange === 'This Week') ? 'Day' : 'Week';
+        // Number of time buckets and step based on range
+        let numBuckets = 4;
+        let dayStep = 7;
+        let bucketLabel = 'Tuần';
+
+        if (dateRange === 'This Week') {
+            numBuckets = 7;
+            dayStep = 1;
+            bucketLabel = 'Ngày';
+        } else if (dateRange === 'This Semester') {
+            numBuckets = 6;
+            dayStep = 30; // Roughly a month
+            bucketLabel = 'Tháng';
+        }
 
         // Build class filter clauses
         let semClause = '';
@@ -696,14 +740,11 @@ export const adminService = {
             semClause = `AND cl.semester = '${semester.replace(/'/g, "''")}'`;
         }
         if (course && course.trim()) {
-            // course is formatted as "CODE - Name"
             const courseCode = course.split(' - ')[0].trim();
             courseClause = `AND c2.code = '${courseCode.replace(/'/g, "''")}'`;
         }
 
-        const dayStep = (dateRange === 'This Week') ? 1 : 7;
-        const buildBucketCase = (col, table) => {
-            // Generate CASE WHEN from highest bucket down, each bucket covers dayStep days
+        const buildCaseExpression = (col, table) => {
             const whenClauses = [];
             for (let i = numBuckets; i >= 2; i--) {
                 const daysAgo = (numBuckets - i + 1) * dayStep;
@@ -714,56 +755,65 @@ export const adminService = {
 
         let weeklyRows = [];
         try {
-            const [rows] = await Grade.sequelize.query(`
-                SELECT week_num,
-                    SUM(quizzes)::int AS quizzes,
-                    SUM(materials)::int AS materials,
-                    SUM(graded)::int AS graded
-                FROM (
+            const query = `
+                WITH raw_data AS (
                     SELECT
-                        ${buildBucketCase('created_at', 'a')} AS week_num,
-                        COUNT(*)::int AS quizzes, 0 AS materials, 0 AS graded
+                        ${buildCaseExpression('created_at', 'a')} AS week_num,
+                        1 AS quizzes, 0 AS materials, 0 AS graded
                     FROM assessments a
                     JOIN classes cl ON a.class_id = cl.id
                     JOIN courses c2 ON cl.course_id = c2.id
-                    WHERE a.created_at >= NOW() - INTERVAL '${totalInterval}'
+                    WHERE a.created_at >= ${dateFrom}
                         AND UPPER(a.assessment_type::text) = 'QUIZ'
                         ${semClause} ${courseClause}
-                    GROUP BY week_num
                     UNION ALL
                     SELECT
-                        ${buildBucketCase('created_at', 'm')} AS week_num,
-                        0 AS quizzes, COUNT(*)::int AS materials, 0 AS graded
+                        ${buildCaseExpression('created_at', 'm')} AS week_num,
+                        0 AS quizzes, 1 AS materials, 0 AS graded
                     FROM materials m
                     JOIN classes cl ON m.class_id = cl.id
                     JOIN courses c2 ON cl.course_id = c2.id
-                    WHERE m.created_at >= NOW() - INTERVAL '${totalInterval}'
+                    WHERE m.created_at >= ${dateFrom}
                         ${semClause} ${courseClause}
-                    GROUP BY week_num
                     UNION ALL
                     SELECT
-                        ${buildBucketCase('graded_at', 'g')} AS week_num,
-                        0 AS quizzes, 0 AS materials, COUNT(*)::int AS graded
+                        ${buildCaseExpression('graded_at', 'g')} AS week_num,
+                        0 AS quizzes, 0 AS materials, 1 AS graded
                     FROM grades g
                     JOIN submissions s ON g.submission_id = s.id
                     JOIN assessments a ON s.assessment_id = a.id
                     JOIN classes cl ON a.class_id = cl.id
                     JOIN courses c2 ON cl.course_id = c2.id
-                    WHERE g.graded_at >= NOW() - INTERVAL '${totalInterval}'
+                    WHERE g.graded_at >= ${dateFrom}
                         AND g.graded_at IS NOT NULL
                         ${semClause} ${courseClause}
-                    GROUP BY week_num
-                ) combined
+                )
+                SELECT week_num,
+                    SUM(quizzes)::int AS quizzes,
+                    SUM(materials)::int AS materials,
+                    SUM(graded)::int AS graded
+                FROM raw_data
                 GROUP BY week_num
                 ORDER BY week_num
-            `);
+            `;
+            const [rows] = await Grade.sequelize.query(query);
             weeklyRows = rows;
+            // Debug logging
+            try {
+                const fs = await import('fs');
+                fs.writeFileSync('debug_teacher_data.json', JSON.stringify({
+                    dateRange,
+                    numBuckets,
+                    dayStep,
+                    dateFrom,
+                    rows: weeklyRows
+                }, null, 2));
+            } catch (e) {}
         } catch (err) {
             console.error('[getTeacherActivity] weekly query error:', err.message);
-            console.error('[getTeacherActivity] SQL params:', { semester, course, dateRange, semClause, courseClause });
         }
 
-        // Build N-bucket chart data
+        // Build chart data
         const chartMap = {};
         for (let i = 1; i <= numBuckets; i++) chartMap[i] = { quizzes: 0, materials: 0, graded: 0 };
         weeklyRows.forEach(r => {
@@ -781,7 +831,7 @@ export const adminService = {
             assignmentsGraded: chartMap[i + 1].graded
         }));
 
-        // Total counts for the date range — all safe with fallback
+        // Total counts for the date range
         let total_quizzes = 0, total_materials = 0, total_graded = 0;
         try {
             const [[r]] = await Grade.sequelize.query(`
@@ -794,7 +844,7 @@ export const adminService = {
                   ${semClause} ${courseClause}
             `);
             total_quizzes = r?.total_quizzes || 0;
-        } catch(e) { console.error('[getTeacherActivity] quizzes count error:', e.message); }
+        } catch(e) {}
 
         try {
             const [[r]] = await Grade.sequelize.query(`
@@ -806,7 +856,7 @@ export const adminService = {
                   ${semClause} ${courseClause}
             `);
             total_materials = r?.total_materials || 0;
-        } catch(e) { console.error('[getTeacherActivity] materials count error:', e.message); }
+        } catch(e) {}
 
         try {
             const [[r]] = await Grade.sequelize.query(`
@@ -821,8 +871,7 @@ export const adminService = {
                   ${semClause} ${courseClause}
             `);
             total_graded = r?.total_graded || 0;
-        } catch(e) { console.error('[getTeacherActivity] graded count error:', e.message); }
-
+        } catch(e) {}
         return {
             activityChartData,
             bucketLabel,
@@ -832,6 +881,35 @@ export const adminService = {
                 assignmentsGraded: total_graded     || 0
             }
         };
+    },
+
+    seedDebugData: async () => {
+        // Use already imported models from the file scope
+        const cls = await Class.findOne();
+        const roles = await Role.findAll();
+        const teacherRole = roles.find(r => r.code === 'TEACHER');
+        const studentRole = roles.find(r => r.code === 'STUDENT');
+
+        const teacher = await User.findOne({ where: { role_id: teacherRole?.id || '' } });
+        const student = await User.findOne({ where: { role_id: studentRole?.id || '' } });
+
+        if (!cls || !teacher || !student) throw new Error('Không tìm thấy đủ dữ liệu (Lớp, GV, HS) để seed.');
+
+        const now = new Date();
+        // Spread data across 6 months (approx 180 days)
+        const buckets = [5, 35, 65, 95, 125, 155]; 
+        
+        for (const days of buckets) {
+            const date = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+            
+            await Assessment.create({ class_id: cls.id, title: `Debug Quiz Day ${days}`, assessment_type: 'QUIZ', created_at: date });
+            await Material.create({ class_id: cls.id, title: `Debug Material Day ${days}`, created_at: date });
+            
+            const ass = await Assessment.create({ class_id: cls.id, title: `Debug Assignment Day ${days}`, assessment_type: 'ASSIGNMENT', created_at: date });
+            const sub = await Submission.create({ assessment_id: ass.id, student_id: student.id, status: 'SUBMITTED', created_at: date });
+            await Grade.create({ submission_id: sub.id, score: 90, graded_at: date, teacher_id: teacher.id });
+        }
+        return { message: 'Seed thành công!', count: buckets.length };
     },
 
     validateScheduleImport: async (rows) => {

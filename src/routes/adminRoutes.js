@@ -48,5 +48,6 @@ router.post("/users", userManagementController.createUser);
 router.put("/users/:id", userManagementController.updateUser);
 router.patch("/users/:id/status", userManagementController.toggleStatus);
 router.patch("/users/:id/reset-password", userManagementController.resetPassword);
+router.post("/debug/seed", adminController.seedDebugData);
 
 export default router;

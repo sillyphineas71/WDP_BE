@@ -172,5 +172,11 @@ export const adminController = {
             await adminService.confirmScheduleImport(validRows);
             res.status(201).json({ success: true, message: "Import lịch học thành công" });
         } catch (error) { next(error); }
+    },
+    seedDebugData: async (req, res, next) => {
+        try {
+            const data = await adminService.seedDebugData();
+            res.status(200).json({ success: true, data });
+        } catch (error) { next(error); }
     }
 };
