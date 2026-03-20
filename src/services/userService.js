@@ -85,6 +85,7 @@ export const changeUserPassword = async (userId, oldPassword, newPassword) => {
     // Hash new password
     user.password_hash = await hashPassword(newPassword);
     user.password_changed_at = new Date();
+    user.must_change_password = false;
     user.updated_at = new Date();
 
     await user.save();

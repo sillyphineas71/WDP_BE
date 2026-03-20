@@ -16,7 +16,7 @@ const formatUserResponse = (user) => {
     phone: user.phone,
     role: user.role?.code?.toLowerCase(),
     status: user.status,
-    role: user.role ? user.role.code : undefined,
+    must_change_password: user.must_change_password,
     created_at: user.created_at,
   };
 };
