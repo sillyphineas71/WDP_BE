@@ -77,12 +77,20 @@ const processUpcomingSessions = async () => {
         const cls = session.class;
         const course = cls.course;
         const teacher = cls.teacher;
-        const startTimeStr = session.start_time.toLocaleString("vi-VN", {
+        const startTimeStr = session.start_time.toLocaleTimeString("vi-VN", {
           timeZone: "Asia/Ho_Chi_Minh",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        
+        const endTimeStr = session.end_time.toLocaleTimeString("vi-VN", {
+          timeZone: "Asia/Ho_Chi_Minh",
+          hour: "2-digit",
+          minute: "2-digit",
         });
 
-        const title = `Nhắc nhở lịch học: ${course.code}`;
-        const bodyTemplate = `Lớp ${cls.name} (Môn: ${course.name}) sẽ bắt đầu vào lúc ${startTimeStr}. Phòng học: ${session.room || "Chưa xếp"}.`;
+        const title = `Nhắc nhở lịch học: ${course.code} (${cls.name})`;
+        const bodyTemplate = `${startTimeStr} - ${endTimeStr} / ${session.room || "Chưa xếp phòng"}`;
 
         // 1. Gather all recipients (Teacher + Active Students)
         const recipients = [
@@ -123,12 +131,14 @@ const processUpcomingSessions = async () => {
         const notificationsToCreate = [];
 
         for (const recipient of recipients) {
-          const personalizedBody = `Chào ${recipient.full_name},\n\n${bodyTemplate}\n\nTrân trọng,\nSmart Edu System`;
+          const personalizedBody = `Chào ${recipient.full_name},\n\nLớp ${cls.name} (Môn: ${course.name}) sắp bắt đầu.\n${startTimeStr} - ${endTimeStr} / ${session.room || "Chưa xếp phòng"}\n\nTrân trọng,\nSmart Edu System`;
           
           const emailHtml = `
             <h2>Nhắc nhở lịch học</h2>
             <p>Xin chào ${recipient.full_name},</p>
-            <p>${bodyTemplate}</p>
+            <p>Lớp ${cls.name} (Môn: ${course.name}) sắp bắt đầu.</p>
+            <p>Thời gian: ${startTimeStr} - ${endTimeStr}</p>
+            <p>Phòng học: ${session.room || "Chưa xếp phòng"}</p>
             <p>Vui lòng chuẩn bị và tham gia đúng giờ.</p>
             <br/>
             <p>Trân trọng,</p>
@@ -139,7 +149,7 @@ const processUpcomingSessions = async () => {
             user_id: recipient.id,
             channel: "in_app",
             title,
-            body: personalizedBody,
+            body: bodyTemplate,
             ref_type: "SESSION",
             ref_id: session.id,
             status: "sent", // in_app is instant
