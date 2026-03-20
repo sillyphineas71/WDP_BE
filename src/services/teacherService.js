@@ -1,6 +1,6 @@
 // src/services/teacherService.js
 import { Op } from "sequelize";
-import { sequelize, Class, Assessment, Course, AssessmentFile, Submission, SubmissionFile, Grade, User, ClassSession, Enrollment } from "../models/index.js";
+import { sequelize, Class, Assessment, Course, AssessmentFile, Submission, SubmissionFile, SubmissionAnswer, Grade, User, ClassSession, QuizQuestion, QuizOption, Enrollment, Notification } from "../models/index.js";
 import { AppError, NotFoundError, ValidationError, ConflictError } from "../errors/AppError.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import mammoth from "mammoth";
@@ -120,6 +120,46 @@ export const teacherService = {
     },
 
     /**
+     * GET only QUIZ assessments for a specific class
+     */
+    getQuizzesByClass: async (teacherId, classId) => {
+        const clazz = await Class.findByPk(classId);
+        if (!clazz) throw new NotFoundError("Class not found");
+        if (String(clazz.teacher_id) !== String(teacherId)) {
+            throw new AppError("Forbidden: not owner teacher of this class", 403);
+        }
+
+        const quizzes = await Assessment.findAll({
+            where: { class_id: classId, type: "QUIZ" },
+            include: [
+                {
+                    model: QuizQuestion,
+                    as: "questions",
+                    attributes: ["id"]
+                },
+                {
+                    model: Submission,
+                    as: "submissions",
+                    attributes: ["id"]
+                }
+            ],
+            order: [["created_at", "DESC"]]
+        });
+
+        return quizzes.map(q => ({
+            id: q.id,
+            title: q.title,
+            status: q.status,
+            dueAt: q.due_at,
+            timeLimit: q.time_limit_minutes,
+            attemptLimit: q.attempt_limit,
+            questionCount: q.questions?.length || 0,
+            submissionCount: q.submissions?.length || 0,
+            createdAt: q.created_at
+        }));
+    },
+
+    /**
      * UC_TEA_10: Create ESSAY assessment (Assignment) - dev branch
      */
     createAssignment: async (teacherId, classId, payload) => {
@@ -181,7 +221,16 @@ export const teacherService = {
     /**
      * UC_TEA_15: Publish or Unpublish Grades for an Assessment
      */
-    publishAssessmentGrades: async (teacherId, classId, assessmentId, isPublished) => {
+    /**
+     * UC_TEA_15: Publish or Unpublish Grades for an Assessment
+     * 
+     * publish_mode:
+     *   - "graded_only": Chỉ công bố cho SV đã được chấm (Normal Flow Bước 4 - Tùy chọn 1)
+     *   - "all_students": Công bố cho toàn bộ SV, tạo Grade 0 cho SV chưa nộp (Bước 4 - Tùy chọn 2)
+     * 
+     * A1: Ẩn lại điểm (is_published = false) -> unpublish tất cả
+     */
+    publishAssessmentGrades: async (teacherId, classId, assessmentId, isPublished, publishMode = 'graded_only') => {
         const clazz = await Class.findByPk(classId);
 
         if (!clazz) {
@@ -203,30 +252,162 @@ export const teacherService = {
             throw new NotFoundError("Assessment not found in this class");
         }
 
-        const updateData = {
-            is_published: isPublished,
-            published_at: isPublished ? new Date() : null
-        };
+        return await sequelize.transaction(async (t) => {
+            const updateData = {
+                is_published: isPublished,
+                published_at: isPublished ? new Date() : null
+            };
 
-        const submissions = await Submission.findAll({
-            where: { assessment_id: assessmentId },
-            attributes: ["id"]
+            // Lấy tất cả submissions
+            const submissions = await Submission.findAll({
+                where: { assessment_id: assessmentId },
+                include: [{ model: Grade, as: 'grade' }],
+                transaction: t
+            });
+
+            // --- TRƯỜNG HỢP UNPUBLISH (A1: Ẩn lại điểm) ---
+            if (!isPublished) {
+                const submissionIds = submissions.map(s => s.id);
+                if (submissionIds.length === 0) {
+                    return { message: "Không có dữ liệu điểm nào để ẩn.", updatedCount: 0 };
+                }
+
+                const [updatedRowCount] = await Grade.update(updateData, {
+                    where: { submission_id: submissionIds },
+                    transaction: t
+                });
+
+                return {
+                    message: `Đã ẩn điểm thành công.`,
+                    updatedCount: updatedRowCount
+                };
+            }
+
+            // --- TRƯỜNG HỢP PUBLISH ---
+
+            // E1: Kiểm tra đã có Grade nào được chấm chưa
+            const gradedSubmissions = submissions.filter(s => s.grade && s.grade.final_score != null);
+
+            if (gradedSubmissions.length === 0 && publishMode === 'graded_only') {
+                throw new AppError(
+                    "Chưa có dữ liệu điểm nào để công bố. Vui lòng chấm bài trước.",
+                    400
+                );
+            }
+
+            let updatedCount = 0;
+            const notifiedStudentIds = [];
+
+            if (publishMode === 'graded_only') {
+                // Tùy chọn 1: Chỉ công bố cho SV đã được chấm
+                const gradedSubmissionIds = gradedSubmissions.map(s => s.id);
+
+                const [count] = await Grade.update(updateData, {
+                    where: { submission_id: gradedSubmissionIds },
+                    transaction: t
+                });
+                updatedCount = count;
+
+                // Ghi nhận SV cần thông báo
+                for (const sub of gradedSubmissions) {
+                    notifiedStudentIds.push(sub.student_id);
+                }
+
+            } else if (publishMode === 'all_students') {
+                // Tùy chọn 2: Công bố cho toàn bộ SV (kể cả chưa nộp -> 0 điểm)
+
+                // Cập nhật Grade cho SV đã có submission + grade
+                const existingGradeSubIds = submissions
+                    .filter(s => s.grade)
+                    .map(s => s.id);
+
+                if (existingGradeSubIds.length > 0) {
+                    const [count] = await Grade.update(updateData, {
+                        where: { submission_id: existingGradeSubIds },
+                        transaction: t
+                    });
+                    updatedCount += count;
+                }
+
+                // Tạo Grade cho SV đã nộp nhưng chưa có Grade
+                const noGradeSubmissions = submissions.filter(s => !s.grade);
+                for (const sub of noGradeSubmissions) {
+                    await Grade.create({
+                        submission_id: sub.id,
+                        final_score: 0,
+                        final_feedback: "Chưa được chấm điểm.",
+                        graded_by: teacherId,
+                        graded_at: new Date(),
+                        is_published: true,
+                        published_at: new Date(),
+                        status: 'graded'
+                    }, { transaction: t });
+                    updatedCount++;
+                }
+
+                // Tìm SV enrolled nhưng chưa nộp bài -> tạo Submission + Grade = 0
+                const enrollments = await Enrollment.findAll({
+                    where: { class_id: classId, status: 'active' },
+                    transaction: t
+                });
+
+                const submittedStudentIds = new Set(submissions.map(s => s.student_id));
+
+                for (const enrollment of enrollments) {
+                    if (!submittedStudentIds.has(enrollment.user_id)) {
+                        // Tạo Submission rỗng
+                        const newSubmission = await Submission.create({
+                            assessment_id: assessmentId,
+                            student_id: enrollment.user_id,
+                            attempt_no: 1,
+                            status: 'not_submitted',
+                            submitted_at: new Date()
+                        }, { transaction: t });
+
+                        // Tạo Grade = 0
+                        await Grade.create({
+                            submission_id: newSubmission.id,
+                            final_score: 0,
+                            final_feedback: "Không nộp bài.",
+                            graded_by: teacherId,
+                            graded_at: new Date(),
+                            is_published: true,
+                            published_at: new Date(),
+                            status: 'graded'
+                        }, { transaction: t });
+
+                        updatedCount++;
+                    }
+                }
+
+                // Toàn bộ SV enrolled cần thông báo
+                for (const enrollment of enrollments) {
+                    notifiedStudentIds.push(enrollment.user_id);
+                }
+            }
+
+            // Gửi thông báo in-app cho sinh viên
+            if (notifiedStudentIds.length > 0) {
+                const notifications = notifiedStudentIds.map(studentId => ({
+                    user_id: studentId,
+                    channel: 'in_app',
+                    title: 'Điểm đã được công bố',
+                    body: `Điểm bài "${assessment.title}" đã được giảng viên công bố. Vào trang điểm để xem kết quả.`,
+                    ref_type: 'GRADE',
+                    ref_id: assessmentId,
+                    status: 'sent',
+                    sent_at: new Date()
+                }));
+
+                await Notification.bulkCreate(notifications, { transaction: t });
+            }
+
+            return {
+                message: `Đã công bố điểm thành công cho ${updatedCount} sinh viên.`,
+                updatedCount,
+                publish_mode: publishMode
+            };
         });
-
-        const submissionIds = submissions.map(s => s.id);
-
-        if (submissionIds.length === 0) {
-            throw new AppError("No submissions found for this assessment to publish grades for", 400);
-        }
-
-        const [updatedRowCount] = await Grade.update(updateData, {
-            where: { submission_id: submissionIds }
-        });
-
-        return {
-            message: `Successfully ${isPublished ? 'published' : 'unpublished'} grades.`,
-            updatedCount: updatedRowCount
-        };
     },
 
     // ================================================================
@@ -586,7 +767,7 @@ export const teacherService = {
             console.error("Lỗi khi gọi AI:", error);
             throw new Error("AI không phản hồi hoặc phản hồi sai định dạng JSON.");
         }
-    }
+    },
 
     ,
     /**
@@ -760,11 +941,7 @@ export const teacherService = {
                     } else {
                         needsGradingCount++;
                     }
-                });
-            }
-
-            return {
-                id: a.id,
+undefined                id: a.id,
                 title: a.title,
                 type: a.type, // QUIZ hoặc ASSIGNMENT
                 className: a.class?.name,
@@ -773,5 +950,104 @@ export const teacherService = {
                 gradedCount
             };
         });
+,
+    // =========================================================undefined                message: `Đã thêm ${createdQuestions.length} câu hỏi vào đề.`,
+                created_count: createdQuestions.length,
+                questions: createdQuestions
+            };
+        });
+    },
+
+    /**
+     * UC_TEA_09 Normal Flow Bước 3-6: Sinh câu hỏi từ AI
+     * - Kết hợp Prompt và Tài liệu (file_urls)
+     * - AI trả về JSON danh sách đề xuất
+     */
+    generateAiQuizQuestions: async (teacherId, assessmentId, payload) => {
+        const assessment = await Assessment.findByPk(assessmentId, {
+            include: [{ model: AssessmentFile, as: 'files' }, { model: Class, as: 'class' }]
+        });
+
+        if (!assessment) throw new NotFoundError("Bài Quiz không tồn tại.");
+        if (String(assessment.class.teacher_id) !== String(teacherId)) {
+            throw new AppError("Forbidden", 403);
+        }
+
+        // 1. Khởi tạo Gemini AI
+        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        const model = genAI.getGenerativeModel({
+            model: "gemini-2.5-flash-lite", // Dùng bản 2.5 (mã hóa theo system info) hoặc gemini-1.5-flash
+            generationConfig: { responseMimeType: "application/json" }
+        });
+
+        let requestData = [];
+
+        requestData.push(`Bạn là một trợ lý giảng viên chuyên soạn đề kiểm tra. 
+Nhiệm vụ: Dựa trên tài liệu và yêu cầu dưới đây, hãy tạo bộ câu hỏi trắc nghiệm (Multiple Choice).
+
+YÊU CẦU:
+- Số lượng: ${payload.num_questions || 10} câu.
+- Prompt từ giảng viên: "${payload.prompt}"
+- Môn học/Tiêu đề: "${assessment.title}"
+
+ĐỊNH DẠNG TRẢ VỀ (JSON):
+Trả về danh sách các object câu hỏi theo format sau:
+[
+  {
+    "question_text": "<Nội dung câu hỏi>",
+    "points": <Số điểm gợi ý cho câu này, VD: 1>,
+    "options": [
+      { "option_text": "<Lựa chọn A>", "is_correct": <true/false>, "display_order": 1 },
+      { "option_text": "<Lựa chọn B>", "is_correct": <true/false>, "display_order": 2 },
+      ...
+    ]
+  }
+]
+CHÚ Ý: Một câu hỏi có thể có 1 hoặc nhiều đáp án đúng (is_correct: true). Đảm bảo tính chính xác kiến thức.`);
+
+        // 2. Xử lý file đính kèm (nếu có)
+        const combinedFiles = [
+            ...(assessment.files || []).map(f => ({ url: f.file_url, name: f.original_name })),
+            ...(payload.file_urls || []).map(url => ({ url, name: url.split('/').pop() }))
+        ];
+
+        if (combinedFiles.length > 0) {
+            requestData.push("\n========== TÀI LIỆU THAM KHẢO ==========");
+            for (const file of combinedFiles) {
+                try {
+                    const response = await fetch(file.url);
+                    const buffer = Buffer.from(await response.arrayBuffer());
+                    const fileName = file.name.toLowerCase();
+
+                    if (fileName.endsWith('.docx')) {
+                        const result = await mammoth.extractRawText({ buffer });
+                        requestData.push(`\n[Nội dung từ ${file.name}]:\n${result.value}\n`);
+                    } else if (fileName.endsWith('.pdf') || fileName.endsWith('.png') || fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+                        const mimeType = fileName.endsWith('.pdf') ? "application/pdf" : (fileName.endsWith('.png') ? "image/png" : "image/jpeg");
+                        requestData.push({
+                            inlineData: { data: buffer.toString("base64"), mimeType }
+                        });
+                    }
+                } catch (e) {
+                    console.error(`Lỗi đọc file ${file.name}:`, e);
+                }
+            }
+        }
+
+        // 3. Gửi cho AI
+        try {
+            const result = await model.generateContent(requestData);
+            const responseText = result.response.text();
+            const questions = JSON.parse(responseText);
+
+            // Gắn display_order cho câu hỏi
+            return questions.map((q, idx) => ({
+                ...q,
+                display_order: idx + 1
+            }));
+        } catch (error) {
+            console.error("Lỗi Gemini AI:", error);
+            throw new AppError("AI không phản hồi hoặc tài liệu không thể đọc được. (E2)", 500);
+        }
     }
 };

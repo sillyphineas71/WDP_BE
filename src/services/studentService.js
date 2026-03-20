@@ -108,7 +108,7 @@ async function loadQuizWithQuestions(quizId) {
 
 async function ensureStudentEnrolled(studentId, classId) {
     const enr = await Enrollment.findOne({
-        where: { student_id: studentId, class_id: classId, status: "active" },
+        where: { user_id: studentId, class_id: classId, status: "active" },
     });
     if (!enr) throw new AppError("Bạn chưa tham gia lớp học này", 403);
 }
@@ -978,4 +978,267 @@ export const studentService = {
             return result;
         });
     },
+
+    // ---------------------------------------------------------------
+    // UC_STU_11: Xem bảng điểm (Gradebook)
+    // ---------------------------------------------------------------
+
+    /**
+     * Normal Flow: Bảng điểm chi tiết của một lớp
+     * - Chỉ hiển thị điểm đã công bố (is_published = true)
+     * - Hiển thị structure cho tất cả assessments (kể cả chưa có điểm - E2)
+     * - Tính điểm tổng kết dựa trên trọng số (weight)
+     */
+    getClassGradebook: async (studentId, classId) => {
+        // 1. Kiểm tra enrollment (BR_01: chỉ xem điểm của chính mình)
+        const enrollment = await Enrollment.findOne({
+            where: { user_id: studentId, class_id: classId, status: 'active' }
+        });
+
+        if (!enrollment) {
+            throw new NotFoundError("Bạn chưa ghi danh vào lớp học này.");
+        }
+
+        // 2. Lấy thông tin lớp
+        const classInfo = await Class.findByPk(classId, {
+            include: [{
+                model: User,
+                as: 'teacher',
+                attributes: ['id', 'full_name']
+            }]
+        });
+
+        if (!classInfo) {
+            throw new NotFoundError("Không tìm thấy lớp học.");
+        }
+
+        // 3. Lấy tất cả assessments của lớp (không phải draft)
+        const assessments = await Assessment.findAll({
+            where: {
+                class_id: classId,
+                status: { [Op.ne]: 'draft' }
+            },
+            order: [['created_at', 'ASC']]
+        });
+
+        // 4. Lấy tất cả submissions + grades của sinh viên này trong lớp
+        const assessmentIds = assessments.map(a => a.id);
+
+        const submissions = await Submission.findAll({
+            where: {
+                assessment_id: { [Op.in]: assessmentIds },
+                student_id: studentId
+            },
+            include: [{
+                model: Grade,
+                as: 'grade'
+            }],
+            order: [['submitted_at', 'DESC']]
+        });
+
+        // Map: assessment_id -> best submission (hoặc submission mới nhất)
+        const submissionMap = {};
+        for (const sub of submissions) {
+            const aid = sub.assessment_id;
+            // Lấy submission có điểm cao nhất (grade method = highest)
+            if (!submissionMap[aid]) {
+                submissionMap[aid] = sub;
+            } else {
+                const currentScore = sub.grade?.final_score != null ? parseFloat(sub.grade.final_score) : -1;
+                const existingScore = submissionMap[aid].grade?.final_score != null
+                    ? parseFloat(submissionMap[aid].grade.final_score) : -1;
+                if (currentScore > existingScore) {
+                    submissionMap[aid] = sub;
+                }
+            }
+        }
+
+        // 5. Build grade items
+        let weightedScoreSum = 0;
+        let weightedMaxSum = 0;
+        let totalWeight = 0;
+
+        const gradeItems = assessments.map(assessment => {
+            const sub = submissionMap[assessment.id];
+            const grade = sub?.grade;
+            const maxScore = parseFloat(assessment.max_score) || 100;
+
+            // Parse settings_json for weight
+            let weight = null;
+            if (assessment.settings_json && assessment.settings_json.weight != null) {
+                weight = parseFloat(assessment.settings_json.weight);
+            }
+
+            // E1: Điểm chưa được công bố
+            const isPublished = grade?.is_published === true;
+
+            // Chỉ lấy điểm đã published
+            let score = null;
+            let feedback = null;
+            let status = 'no_submission'; // Chưa nộp bài
+
+            if (sub) {
+                if (sub.status === 'not_submitted') {
+                    status = 'not_submitted';
+                } else if (!grade) {
+                    status = 'submitted'; // Đã nộp, chưa chấm
+                } else if (!isPublished) {
+                    status = 'hidden'; // E1: Đã chấm nhưng chưa công bố
+                } else {
+                    status = 'published'; // Đã công bố
+                    score = parseFloat(grade.final_score);
+                    feedback = grade.final_feedback;
+                }
+            }
+
+            // Tính weighted sum (chỉ tính điểm đã published)
+            if (status === 'published' && weight != null && score != null) {
+                weightedScoreSum += (score / maxScore) * weight;
+                weightedMaxSum += weight;
+                totalWeight += weight;
+            } else if (weight != null) {
+                totalWeight += weight;
+            }
+
+            return {
+                assessment_id: assessment.id,
+                title: assessment.title,
+                type: assessment.type,
+                weight: weight,
+                max_score: maxScore,
+                score: score,
+                feedback: feedback,
+                status: status,
+                due_at: assessment.due_at,
+                submitted_at: sub?.submitted_at || null,
+                attempt_no: sub?.attempt_no || null
+            };
+        });
+
+        // 6. Tính điểm tổng kết (Course Total)
+        let courseTotal = null;
+        if (weightedMaxSum > 0) {
+            // Tính theo trọng số đã có điểm
+            courseTotal = Math.round((weightedScoreSum / weightedMaxSum) * 100 * 100) / 100;
+        } else {
+            // Fallback: Tính trung bình nếu không có weight
+            const publishedItems = gradeItems.filter(g => g.status === 'published' && g.score != null);
+            if (publishedItems.length > 0) {
+                const totalPercent = publishedItems.reduce((sum, g) => sum + (g.score / g.max_score) * 100, 0);
+                courseTotal = Math.round((totalPercent / publishedItems.length) * 100) / 100;
+            }
+        }
+
+        return {
+            class: {
+                id: classInfo.id,
+                name: classInfo.name,
+                teacher: classInfo.teacher?.full_name || 'N/A'
+            },
+            grade_items: gradeItems,
+            course_total: courseTotal,
+            total_weight: totalWeight
+        };
+    },
+
+    /**
+     * A1: Tổng quan điểm các môn (Grade Overview)
+     * Hiển thị tất cả lớp enrolled + điểm tổng kết hiện tại
+     */
+    getGradesOverview: async (studentId) => {
+        // 1. Lấy tất cả enrollments
+        const enrollments = await Enrollment.findAll({
+            where: { user_id: studentId, status: 'active' },
+            include: [{
+                model: Class,
+                as: 'class',
+                include: [{
+                    model: User,
+                    as: 'teacher',
+                    attributes: ['id', 'full_name']
+                }]
+            }]
+        });
+
+        const results = [];
+
+        for (const enrollment of enrollments) {
+            const cl = enrollment.class;
+
+            // Lấy assessments
+            const assessments = await Assessment.findAll({
+                where: {
+                    class_id: cl.id,
+                    status: { [Op.ne]: 'draft' }
+                }
+            });
+
+            const assessmentIds = assessments.map(a => a.id);
+
+            if (assessmentIds.length === 0) {
+                results.push({
+                    class_id: cl.id,
+                    class_name: cl.name,
+                    teacher: cl.teacher?.full_name || 'N/A',
+                    course_total: null,
+                    published_count: 0,
+                    total_assessments: 0
+                });
+                continue;
+            }
+
+            // Lấy submissions có grade published
+            const submissions = await Submission.findAll({
+                where: {
+                    assessment_id: { [Op.in]: assessmentIds },
+                    student_id: studentId
+                },
+                include: [{
+                    model: Grade,
+                    as: 'grade',
+                    where: { is_published: true },
+                    required: true
+                }]
+            });
+
+            // Giữ submission tốt nhất cho mỗi assessment
+            const bestByAssessment = {};
+            for (const sub of submissions) {
+                const aid = sub.assessment_id;
+                const score = parseFloat(sub.grade.final_score) || 0;
+                if (!bestByAssessment[aid] || score > bestByAssessment[aid].score) {
+                    bestByAssessment[aid] = { score, maxScore: 0 };
+                }
+            }
+
+            // Map max_score
+            for (const a of assessments) {
+                if (bestByAssessment[a.id]) {
+                    bestByAssessment[a.id].maxScore = parseFloat(a.max_score) || 100;
+                }
+            }
+
+            const publishedEntries = Object.values(bestByAssessment);
+            let courseTotal = null;
+
+            if (publishedEntries.length > 0) {
+                const totalPercent = publishedEntries.reduce(
+                    (sum, e) => sum + (e.score / e.maxScore) * 100, 0
+                );
+                courseTotal = Math.round((totalPercent / publishedEntries.length) * 100) / 100;
+            }
+
+            results.push({
+                class_id: cl.id,
+                class_name: cl.name,
+                teacher: cl.teacher?.full_name || 'N/A',
+                course_total: courseTotal,
+                published_count: publishedEntries.length,
+                total_assessments: assessments.length
+            });
+        }
+
+        return results;
+    }
 };
+
