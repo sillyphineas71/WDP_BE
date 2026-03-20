@@ -231,12 +231,17 @@ async function autoGradeAndFinalize({ submission, quiz, settings, transaction })
         );
     }
 
+    const timeTakenSeconds = submission.started_at 
+        ? Math.floor((new Date().getTime() - new Date(submission.started_at).getTime()) / 1000)
+        : null;
+
     return {
         submissionId: submission.id,
         status: submission.status,
         totalScore,
         maxScore,
         isPublished,
+        timeTakenSeconds,
         message: isPublished
             ? "Đã nộp bài và có điểm"
             : "Đã nộp bài. Điểm sẽ hiển thị sau khi đóng đề",
@@ -554,7 +559,7 @@ export const studentService = {
                 assessment_id: assessmentId,
                 student_id: studentId
             },
-            attributes: ['id', 'assessment_id', 'student_id', 'status', 'submitted_at', 'content_text'],
+            attributes: ['id', 'assessment_id', 'student_id', 'status', 'submitted_at', 'content_text', 'attempt_no'],
             include: [
                 {
                     model: Grade,

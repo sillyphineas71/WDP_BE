@@ -87,6 +87,36 @@ export const createQuiz = async (req, res, next) => {
     }
 };
 
+export const getQuizDetail = async (req, res, next) => {
+    try {
+        const teacherId = req.user?.id;
+        const { classId, quizId } = req.params;
+
+        const data = await teacherService.getQuizDetail(teacherId, classId, quizId);
+
+        return res.json(successResponse(data, "Quiz detail fetched successfully"));
+    } catch (err) {
+        next(err);
+    }
+};
+
+export const updateQuiz = async (req, res, next) => {
+    try {
+        const teacherId = req.user?.id;
+        const { classId, quizId } = req.params;
+
+        // Optionally validate with validateCreateQuiz (we can allow partial but let's assume it has same fields)
+        const { error, value } = validateCreateQuiz(req.body);
+        if (error) return next(error);
+
+        const data = await teacherService.updateQuiz(teacherId, classId, quizId, value);
+
+        return res.json(successResponse(data, "Quiz updated successfully"));
+    } catch (err) {
+        next(err);
+    }
+};
+
 export const createAssignment = async (req, res, next) => {
     try {
         const teacherId = req.user?.id;
