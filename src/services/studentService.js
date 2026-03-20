@@ -298,12 +298,29 @@ export const studentService = {
         const next7Days = new Date();
         next7Days.setDate(next7Days.getDate() + 7);
 
-        const upcomingAssessmentsList = await Assessment.findAll({
+        // Find assessments that the student has already submitted/graded
+        const completedSubmissions = await Submission.findAll({
             where: {
-                class_id: { [Op.in]: enrolledClassIds },
-                status: "published",
-                due_at: { [Op.between]: [new Date(), next7Days] },
+                student_id: studentId,
+                status: { [Op.ne]: 'in_progress' }
             },
+            attributes: ['assessment_id'],
+            raw: true
+        });
+        const completedAssessmentIds = completedSubmissions.map(s => s.assessment_id);
+
+        const whereClause = {
+            class_id: { [Op.in]: enrolledClassIds },
+            status: "published",
+            due_at: { [Op.between]: [new Date(), next7Days] },
+        };
+
+        if (completedAssessmentIds.length > 0) {
+            whereClause.id = { [Op.notIn]: completedAssessmentIds };
+        }
+
+        const upcomingAssessmentsList = await Assessment.findAll({
+            where: whereClause,
             include: [{ model: Class, as: "class", attributes: ["name"] }],
             order: [["due_at", "ASC"]],
         });
@@ -443,12 +460,13 @@ export const studentService = {
 
             // Format schedule from sessions
             const schedule = (c.sessions || []).map(s => {
-                const dayOptions = { weekday: 'short' };
+                const dayOptions = { weekday: 'long' };
                 const timeOptions = { hour: '2-digit', minute: '2-digit' };
                 return {
-                    day: s.start_time.toLocaleDateString('en-US', dayOptions),
-                    time: `${s.start_time.toLocaleTimeString('en-US', timeOptions)} - ${s.end_time.toLocaleTimeString('en-US', timeOptions)}`,
-                    room: s.room
+                    day: s.start_time.toLocaleDateString('vi-VN', dayOptions),
+                    time: `${s.start_time.toLocaleTimeString('vi-VN', timeOptions)} - ${s.end_time.toLocaleTimeString('vi-VN', timeOptions)}`,
+                    room: s.room || 'TBA',
+                    rawDate: s.start_time
                 };
             });
 
@@ -520,8 +538,9 @@ export const studentService = {
             room: cl.sessions?.[0]?.room || "TBA",
             studentsCount,
             schedule: (cl.sessions || []).map(s => ({
-                day: s.start_time.toLocaleDateString('en-US', { weekday: 'long' }),
-                time: `${s.start_time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - ${s.end_time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`,
+                day: s.start_time.toLocaleDateString('vi-VN', { weekday: 'long' }),
+                time: `${s.start_time.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - ${s.end_time.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`,
+                room: s.room || 'TBA'
             })),
             materials: materials.map(m => ({
                 id: m.id,
@@ -532,6 +551,7 @@ export const studentService = {
             assignments: assignments.map(a => ({
                 id: a.id,
                 title: a.title,
+                type: a.type,
                 due: a.due_at ? a.due_at.toLocaleString('en-US') : 'No due date',
                 points: Number(a.max_score) || 100,
             })),
