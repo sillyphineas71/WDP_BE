@@ -121,8 +121,13 @@ export const submitAttempt = async (req, res, next) => {
     try {
         const studentId = req.user?.id;
         const { submissionId } = req.params;
+        const { cheat_detected } = req.body || {};
 
-        const data = await studentService.submitAttempt({ studentId, submissionId });
+        const data = await studentService.submitAttempt({ 
+            studentId, 
+            submissionId, 
+            cheat_detected: !!cheat_detected 
+        });
         return res.status(200).json(successResponse(data, "Submitted", 200));
     } catch (e) {
         next(e);
