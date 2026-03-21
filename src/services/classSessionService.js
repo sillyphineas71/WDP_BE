@@ -338,6 +338,24 @@ const parseISO = (value, field) => {
   return d;
 };
 
+const isDateOnly = (value) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+const parseRangeStart = (value, field) => {
+  if (isDateOnly(value)) {
+    return new Date(`${value}T00:00:00.000Z`);
+  }
+  return parseISO(value, field);
+};
+
+const parseRangeEndExclusive = (value, field) => {
+  if (isDateOnly(value)) {
+    const end = new Date(`${value}T00:00:00.000Z`);
+    end.setUTCDate(end.getUTCDate() + 1);
+    return end;
+  }
+  return parseISO(value, field);
+};
+
 const getCourseCodeField = () => {
   // cố gắng bắt tên field mã môn phổ biến
   const attrs = Course.getAttributes?.() || {};
@@ -386,15 +404,30 @@ export const listClassSessions = async (query) => {
   const sessionWhere = {};
   if (status) sessionWhere.status = status;
 
-  if (from) sessionWhere.start_time = { [Op.gte]: parseISO(from, "from") };
-  if (to) sessionWhere.end_time = { [Op.lte]: parseISO(to, "to") };
+  const rangeFrom = from ? parseRangeStart(from, "from") : null;
+  const rangeToExclusive = to ? parseRangeEndExclusive(to, "to") : null;
+
+  if (rangeFrom && rangeToExclusive && rangeFrom >= rangeToExclusive) {
+    throw httpError(
+      "Invalid date range. 'from' must be before 'to'.",
+      400,
+      "VALIDATION_ERROR",
+    );
+  }
+
+  if (rangeFrom) {
+    sessionWhere.end_time = { [Op.gte]: rangeFrom };
+  }
+  if (rangeToExclusive) {
+    sessionWhere.start_time = { [Op.lt]: rangeToExclusive };
+  }
 
   if (class_id) sessionWhere.class_id = class_id;
-  if (room) sessionWhere.room = room;
+  if (room) sessionWhere.room = { [Op.iLike]: `%${room}%` };
 
   const classWhere = {};
   if (teacher_id) classWhere.teacher_id = teacher_id;
-  if (semester) classWhere.semester = semester;
+  if (semester) classWhere.semester = { [Op.iLike]: `%${semester}%` };
 
   const courseCodeField = getCourseCodeField();
 
@@ -409,7 +442,9 @@ export const listClassSessions = async (query) => {
           model: Course,
           as: "course",
           required: !!course_code,
-          where: course_code ? { [courseCodeField]: course_code } : undefined,
+          where: course_code
+            ? { [courseCodeField]: { [Op.iLike]: `%${course_code}%` } }
+            : undefined,
           attributes: ["id", courseCodeField, "name"],
         },
         {
