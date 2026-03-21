@@ -19,6 +19,9 @@ import { initSubmissionAnswer, SubmissionAnswer } from "./SubmissionAnswer.js";
 import { initSubmissionFile, SubmissionFile } from "./SubmissionFile.js";
 import { initGrade, Grade } from "./Grade.js";
 import { initNotification, Notification } from "./Notification.js";
+import { initClassStreamPost, ClassStreamPost } from "./ClassStreamPost.js";
+import { initClassStreamComment, ClassStreamComment } from "./ClassStreamComment.js";
+import { initClassStreamAttachment, ClassStreamAttachment } from "./ClassStreamAttachment.js";
 import sequelize from "../config/database.js";
 
 export function initModels(sequelize) {
@@ -43,6 +46,9 @@ export function initModels(sequelize) {
   initSubmissionFile(sequelize);
   initGrade(sequelize);
   initNotification(sequelize);
+  initClassStreamPost(sequelize);
+  initClassStreamComment(sequelize);
+  initClassStreamAttachment(sequelize);
 
   // 2. Định nghĩa quan hệ (Associations)
 
@@ -128,6 +134,33 @@ export function initModels(sequelize) {
   User.hasMany(Notification, { foreignKey: "user_id", as: "notifications" });
   Notification.belongsTo(User, { foreignKey: "user_id", as: "user" });
 
+  // Class Stream Posts
+Class.hasMany(ClassStreamPost, { foreignKey: "class_id", as: "streamPosts" });
+ClassStreamPost.belongsTo(Class, { foreignKey: "class_id", as: "class" });
+
+User.hasMany(ClassStreamPost, { foreignKey: "author_id", as: "authoredStreamPosts" });
+ClassStreamPost.belongsTo(User, { foreignKey: "author_id", as: "author" });
+
+// Class Stream Comments
+ClassStreamPost.hasMany(ClassStreamComment, { foreignKey: "post_id", as: "comments" });
+ClassStreamComment.belongsTo(ClassStreamPost, { foreignKey: "post_id", as: "post" });
+
+User.hasMany(ClassStreamComment, { foreignKey: "author_id", as: "authoredStreamComments" });
+ClassStreamComment.belongsTo(User, { foreignKey: "author_id", as: "author" });
+
+ClassStreamComment.hasMany(ClassStreamComment, { foreignKey: "parent_comment_id", as: "replies" });
+ClassStreamComment.belongsTo(ClassStreamComment, { foreignKey: "parent_comment_id", as: "parentComment" });
+
+// Class Stream Attachments
+ClassStreamPost.hasMany(ClassStreamAttachment, { foreignKey: "post_id", as: "attachments" });
+ClassStreamAttachment.belongsTo(ClassStreamPost, { foreignKey: "post_id", as: "post" });
+
+ClassStreamComment.hasMany(ClassStreamAttachment, { foreignKey: "comment_id", as: "attachments" });
+ClassStreamAttachment.belongsTo(ClassStreamComment, { foreignKey: "comment_id", as: "comment" });
+
+User.hasMany(ClassStreamAttachment, { foreignKey: "uploaded_by", as: "uploadedStreamAttachments" });
+ClassStreamAttachment.belongsTo(User, { foreignKey: "uploaded_by", as: "uploader" });
+
   return {
     Role, User, PasswordResetToken, Course, Class, Enrollment,
     ClassSession, AttendanceRecord, Material, Assessment, AssessmentFile,
@@ -141,4 +174,5 @@ export {
   ClassSession, AttendanceRecord, Material, Assessment, AssessmentFile,
   QuizQuestion, QuizOption, ImportJob, ImportRow, Submission,
   SubmissionAnswer, SubmissionFile, Grade, Notification,
+  ClassStreamPost, ClassStreamComment, ClassStreamAttachment,
 };
