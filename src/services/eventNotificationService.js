@@ -1,38 +1,53 @@
-import { User, Notification, sequelize } from "../models/index.js";
+import { User, Notification } from "../models/index.js";
 import { pushInAppNotification } from "../config/socket.js";
 import {
   queueEmailNotification,
   queuePushNotification,
 } from "./notificationService.js";
 
-// ====== TEMPLATE REPOSITORY ======
-// Có thể mở rộng ra DB nếu cần động hoá, nhưng hardcode object là đủ cho version MVP
 const NOTIFICATION_TEMPLATES = {
   TEST_EVENT: {
-    title: (params) => `Thông báo thử nghiệm: ${params.title || "N/A"}`,
-    body: (params) => `Xin chào, đây là tin nhắn test từ hệ thống. MSG: ${params.message}`,
+    title: (params) => `Thong bao thu nghiem: ${params.title || "N/A"}`,
+    body: (params) => `Xin chao, day la tin nhan test tu he thong. MSG: ${params.message}`,
   },
   ACCOUNT_CREATED: {
-    title: () => "Tài khoản của bạn đã được tạo thành công",
-    body: (params) => `Chào mừng bạn đến với Smart Edu. Email đăng nhập của bạn là: ${params.email}.`,
+    title: () => "Tai khoan cua ban da duoc tao thanh cong",
+    body: (params) => `Chao mung ban den voi Smart Edu. Email dang nhap cua ban la: ${params.email}.`,
   },
   SESSION_REMINDER: {
-    title: (params) => `Nhắc nhở lịch học: ${params.course_code}`,
-    body: (params) => `Lớp ${params.class_name} sẽ bắt đầu vào lúc ${params.start_time}. Phòng học: ${params.room}.`,
+    title: (params) => `Nhac nho lich hoc: ${params.course_code}`,
+    body: (params) => `Lop ${params.class_name} se bat dau vao luc ${params.start_time}. Phong hoc: ${params.room}.`,
   },
   DEADLINE_WARNING: {
-    title: (params) => `Nhắc nhở hạn nộp bài: ${params.assessment_title}`,
-    body: (params) => `Bài tập môn ${params.course_name} sắp hết hạn vào lúc ${params.due_at}. Vui lòng nộp bài sớm.`,
+    title: (params) => `Nhac nho han nop bai: ${params.assessment_title}`,
+    body: (params) => `Bai tap mon ${params.course_name} sap het han vao luc ${params.due_at}. Vui long nop bai som.`,
   },
   GRADE_PUBLISHED: {
-    title: (params) => `Đã có điểm: ${params.assessment_title}`,
-    body: (params) => `Bài tập "${params.assessment_title}" của môn ${params.course_name} đã được chấm. Điểm của bạn: ${params.score}.`,
+    title: (params) => `Da co diem: ${params.assessment_title}`,
+    body: (params) => `Bai tap "${params.assessment_title}" cua mon ${params.course_name} da duoc cham. Diem cua ban: ${params.score}.`,
+  },
+  STREAM_POST_CREATED_TEACHER: {
+    title: (params) => `${params.author_name} vua dang bai moi trong lop ${params.class_name}`,
+    body: (params) =>
+      `${params.post_type_label || "Bai dang"} moi: ${params.excerpt || "Hay mo Stream de xem chi tiet."}`,
+  },
+  STREAM_POST_CREATED_STUDENT: {
+    title: (params) => `Co bai dang moi tu hoc vien trong lop ${params.class_name}`,
+    body: (params) =>
+      `${params.author_name} vua dang ${params.post_type_label?.toLowerCase() || "mot noi dung moi"}: ${params.excerpt || "Mo Stream de xem them."}`,
+  },
+  STREAM_COMMENT_CREATED: {
+    title: (params) => `${params.author_name} vua binh luan trong lop ${params.class_name}`,
+    body: (params) =>
+      `${params.excerpt || "Co binh luan moi tren bai dang lien quan den ban."}`,
+  },
+  STREAM_POST_PINNED: {
+    title: (params) => `Giang vien vua ghim mot bai dang trong lop ${params.class_name}`,
+    body: (params) =>
+      `${params.post_type_label || "Bai dang"} quan trong da duoc ghim: ${params.excerpt || "Mo Stream de xem chi tiet."}`,
   },
 };
 
-/**
- * Hàm phân giải template dựa trên event_type và params.
- */
 const renderContent = (eventType, params) => {
   const template = NOTIFICATION_TEMPLATES[eventType];
   if (!template) {
@@ -45,32 +60,18 @@ const renderContent = (eventType, params) => {
   };
 };
 
-/**
- * Generic Processor cho UC_SYS_03
- *
- * payload format:
- * {
- *   event_type: "TEST_EVENT",
- *   user_ids: ["uuid1", "uuid2"],
- *   params: { key: "value" },
- *   channels: ["in_app", "email", "push"]
- * }
- */
 export const processEventNotification = async (payload) => {
   const { event_type, user_ids, params, channels } = payload;
 
-  if (!event_type || !user_ids || !Array.isArray(user_ids) || user_ids.length === 0) {
+  if (!event_type || !Array.isArray(user_ids) || user_ids.length === 0) {
     throw new Error("Invalid event payload: missing event_type or user_ids");
   }
 
-  const selectedChannels = Array.isArray(channels) && channels.length > 0
-    ? channels
-    : ["in_app"]; // Default to in_app only
+  const selectedChannels =
+    Array.isArray(channels) && channels.length > 0 ? channels : ["in_app"];
 
-  // Render content
   const { title, body } = renderContent(event_type, params || {});
 
-  // Fetch Users info from DB (to get emails and names)
   const users = await User.findAll({
     where: { id: user_ids },
     attributes: ["id", "full_name", "email"],
@@ -84,37 +85,38 @@ export const processEventNotification = async (payload) => {
   const notificationsToCreate = [];
 
   for (const user of users) {
-    const personalizedBody = `Chào ${user.full_name},\n\n${body}\n\nTrân trọng,\nSmart Edu System`;
+    const personalizedBody = `Chao ${user.full_name},\n\n${body}\n\nTran trong,\nSmart Edu System`;
 
-    // 1. IN-APP CHANNEL
     if (selectedChannels.includes("in_app")) {
+      const createdAt = new Date();
       const notifRecord = {
         user_id: user.id,
         channel: "in_app",
-        title: title,
+        title,
         body: personalizedBody,
-        ref_type: params?.ref_type || "SYSTEM", // Optional references
+        ref_type: params?.ref_type || "SYSTEM",
         ref_id: params?.ref_id || null,
         status: "sent",
-        sent_at: new Date(),
+        sent_at: createdAt,
+        created_at: createdAt,
       };
       notificationsToCreate.push(notifRecord);
-      
-      // Dispatch immediately to cache payload memory for socket
-      const inAppPayload = { ...notifRecord, is_read: false, created_at: new Date() };
-      pushInAppNotification(user.id, inAppPayload);
+
+      pushInAppNotification(user.id, {
+        ...notifRecord,
+        is_read: false,
+      });
     }
 
-    // 2. EMAIL CHANNEL
     if (selectedChannels.includes("email") && user.email) {
       const emailHtml = `
         <div style="font-family: Arial, sans-serif; padding: 20px;">
           <h2>${title}</h2>
-          <p>Xin chào <strong>${user.full_name}</strong>,</p>
+          <p>Xin chao <strong>${user.full_name}</strong>,</p>
           <p>${body}</p>
           <br/>
           <hr/>
-          <p style="color: #666; font-size: 12px;">Tin nhắn tự động từ Hệ thống Smart Edu.</p>
+          <p style="color: #666; font-size: 12px;">Tin nhan tu dong tu He thong Smart Edu.</p>
         </div>
       `;
 
@@ -123,36 +125,37 @@ export const processEventNotification = async (payload) => {
         subject: title,
         html: emailHtml,
         text: personalizedBody,
-      }).catch((err) =>
-        console.error(`[EventNoti] Failed to queue email for ${user.email}:`, err.message),
+      }).catch((error) =>
+        console.error(`[EventNoti] Failed to queue email for ${user.email}:`, error.message),
       );
     }
 
-    // 3. PUSH CHANNEL
     if (selectedChannels.includes("push")) {
       queuePushNotification({
         userId: user.id,
-        title: title,
-        body: body,
+        title,
+        body,
         data: {
-          event_type: event_type,
+          event_type,
           ref_id: String(params?.ref_id || ""),
         },
-      }).catch((err) =>
-        console.error(`[EventNoti] Failed to queue push for ${user.id}:`, err.message),
+      }).catch((error) =>
+        console.error(`[EventNoti] Failed to queue push for ${user.id}:`, error.message),
       );
     }
   }
 
-  // Bulk Insert IN-APP records into database
   if (notificationsToCreate.length > 0) {
     try {
       await Notification.bulkCreate(notificationsToCreate);
-      console.log(`[EventNoti] Created ${notificationsToCreate.length} in_app records for ${event_type}`);
-    } catch (dbError) {
-      console.error(`[EventNoti] Failed to bulk insert notifications:`, dbError.message);
+      console.log(
+        `[EventNoti] Created ${notificationsToCreate.length} in_app records for ${event_type}`,
+      );
+    } catch (error) {
+      console.error(`[EventNoti] Failed to bulk insert notifications:`, error.message);
     }
   }
 
   return { success: true, processedUsers: users.length, event: event_type };
 };
+

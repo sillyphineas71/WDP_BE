@@ -9,6 +9,7 @@ import {
   getUnreadCount,
   markAsRead,
   markAllAsRead,
+  resolveNotificationTarget,
 } from "../controllers/notificationController.js";
 
 const router = express.Router();
@@ -23,6 +24,7 @@ router.post("/test-push", sendTestPush);
 // UC_STU_13 & UC_TEA_05 Endpoints
 router.get("/", getMyNotifications);
 router.get("/unread-count", getUnreadCount);
+router.get("/:id/target", resolveNotificationTarget);
 router.patch("/read-all", markAllAsRead);
 router.patch("/:id/read", markAsRead);
 

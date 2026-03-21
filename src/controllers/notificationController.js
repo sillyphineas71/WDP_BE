@@ -15,6 +15,7 @@ import {
   validateNotificationId,
 } from "../validators/notificationValidator.js";
 import { Notification } from "../models/index.js";
+import { resolveNotificationTargetForUser } from "../services/classStreamService.js";
 
 const validationErrorResponse = (res, error) => {
   const validationErrors = error.details.map((detail) => ({
@@ -219,6 +220,7 @@ export const getUnreadCount = async (req, res, next) => {
       statusCode: 200,
       data: {
         unread_count: unreadCount,
+        unread_badge: unreadCount > 99 ? "99+" : String(unreadCount),
       },
     });
   } catch (error) {
@@ -282,6 +284,27 @@ export const markAllAsRead = async (req, res, next) => {
       data: {
         updated_count: updatedRows,
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const resolveNotificationTarget = async (req, res, next) => {
+  try {
+    const { error, value } = validateNotificationId(req.params);
+
+    if (error) {
+      return validationErrorResponse(res, error);
+    }
+
+    const data = await resolveNotificationTargetForUser(req.user.id, value.id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Notification target resolved successfully",
+      statusCode: 200,
+      data,
     });
   } catch (error) {
     next(error);
