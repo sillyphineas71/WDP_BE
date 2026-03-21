@@ -26,7 +26,14 @@ export function initNotification(sequelize) {
         defaultValue: false,
       },
       ref_type: {
-        type: DataTypes.ENUM("SESSION", "ASSESSMENT", "GRADE", "SYSTEM"),
+        type: DataTypes.ENUM(
+          "SESSION",
+          "ASSESSMENT",
+          "GRADE",
+          "SYSTEM",
+          "STREAM_POST",
+          "STREAM_COMMENT",
+        ),
       },
       ref_id: { type: DataTypes.UUID },
       status: {
@@ -35,6 +42,11 @@ export function initNotification(sequelize) {
         defaultValue: "scheduled",
       },
       error_message: { type: DataTypes.TEXT },
+      created_at: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+      },
     },
     {
       sequelize,
