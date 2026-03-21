@@ -23,26 +23,66 @@ export const teacherService = {
      * GET classes that teacher manages (dev branch)
      */
     getClassesByTeacher: async (teacherId) => {
-        const classes = await Class.findAll({
-            where: { teacher_id: teacherId },
-            include: [
-                {
-                    model: Course,
-                    as: "course",
-                    attributes: ["name"]
-                }
-            ],
-            order: [["start_date", "DESC"]]
-        });
+        try {
+            // 1. Fetch classes
+            const classes = await Class.findAll({
+                where: { teacher_id: teacherId },
+                include: [{ model: Course, as: 'course' }],
+                order: [['created_at', 'DESC']]
+            });
 
-        return classes.map(c => ({
-            id: c.id,
-            name: c.name,
-            courseName: c.course?.name,
-            startDate: c.start_date,
-            endDate: c.end_date,
-            status: c.status
-        }));
+            console.log(`[DEBUG_TEACHER] Found ${classes.length} classes`);
+
+            const result = [];
+            for (const c of classes) {
+                // 2. Fetch enrollment count separately
+                const enrollmentCount = await Enrollment.count({
+                    where: { class_id: c.id }
+                });
+
+                // 3. Fetch sessions separately
+                const sessions = await ClassSession.findAll({
+                    where: { class_id: c.id },
+                    order: [['start_time', 'ASC']]
+                });
+
+                const schedule = sessions.map(s => {
+                    const dayOptions = { weekday: 'long' };
+                    const timeOptions = { hour: '2-digit', minute: '2-digit' };
+                    try {
+                        return {
+                            day: s.start_time.toLocaleDateString('vi-VN', dayOptions),
+                            time: `${s.start_time.toLocaleTimeString('vi-VN', timeOptions)} - ${s.end_time.toLocaleTimeString('vi-VN', timeOptions)}`,
+                            room: s.room || 'TBA',
+                            rawDate: s.start_time
+                        };
+                    } catch (e) {
+                        return { day: "CXĐ", time: "CXĐ", room: s.room || "TBA" };
+                    }
+                });
+
+                console.log(`[DEBUG_CLASS] ${c.name}: Enrollments=${enrollmentCount}, Sessions=${sessions.length}`);
+
+                result.push({
+                    id: c.id,
+                    name: c.name,
+                    status: c.status,
+                    courseName: c.course?.name,
+                    courseCode: c.course?.code,
+                    course: c.course,
+                    studentCount: enrollmentCount,
+                    room: sessions[0]?.room || "TBA",
+                    schedule: schedule,
+                    startDate: c.start_date,
+                    endDate: c.end_date
+                });
+            }
+
+            return result;
+        } catch (err) {
+            console.error("[ERROR_TEACHER_SERVICE]", err);
+            throw err;
+        }
     },
 
     /**
@@ -585,10 +625,40 @@ export const teacherService = {
     },
 
     getMyClasses: async (teacherId) => {
-        return await Class.findAll({
+        const classes = await Class.findAll({
             where: { teacher_id: teacherId, status: 'active' },
-            include: [{ model: Course, as: 'course', attributes: ['name', 'code'] }],
+            include: [
+                { model: Course, as: 'course', attributes: ['name', 'code'] },
+                {
+                    model: ClassSession,
+                    as: 'sessions',
+                    attributes: ['id', 'start_time', 'end_time', 'room'],
+                }
+            ],
             order: [['created_at', 'DESC']]
+        });
+
+        return classes.map(c => {
+            // Format schedule from sessions
+            const schedule = (c.sessions || []).map(s => {
+                const dayOptions = { weekday: 'long' };
+                const timeOptions = { hour: '2-digit', minute: '2-digit' };
+                return {
+                    day: s.start_time.toLocaleDateString('vi-VN', dayOptions),
+                    time: `${s.start_time.toLocaleTimeString('vi-VN', timeOptions)} - ${s.end_time.toLocaleTimeString('vi-VN', timeOptions)}`,
+                    room: s.room || 'TBA',
+                    rawDate: s.start_time
+                };
+            });
+
+            return {
+                id: c.id,
+                name: c.name,
+                status: c.status,
+                course: c.course,
+                room: c.sessions?.[0]?.room || "TBA",
+                schedule: schedule
+            };
         });
     },
 
