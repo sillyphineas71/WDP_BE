@@ -28,6 +28,20 @@ export const adminController = {
             res.status(200).json({ success: true, message: "Deleted" });
         } catch (error) { next(error); }
     },
+    validateCourseImport: async (req, res, next) => {
+        try {
+            const { rows } = req.body;
+            const data = await adminService.validateCourseImport(rows);
+            res.status(200).json({ success: true, data });
+        } catch (error) { next(error); }
+    },
+    confirmCourseImport: async (req, res, next) => {
+        try {
+            const { validRows } = req.body;
+            await adminService.confirmCourseImport(validRows);
+            res.status(201).json({ success: true, message: "Import khóa học thành công" });
+        } catch (error) { next(error); }
+    },
 
     // Class Handlers
     getClasses: async (req, res, next) => {
@@ -64,6 +78,20 @@ export const adminController = {
         try {
             const data = await adminService.updateClass(req.params.id, req.body);
             res.status(200).json({ success: true, data });
+        } catch (error) { next(error); }
+    },
+    validateClassImport: async (req, res, next) => {
+        try {
+            const { rows } = req.body;
+            const data = await adminService.validateClassImport(rows);
+            res.status(200).json({ success: true, data });
+        } catch (error) { next(error); }
+    },
+    confirmClassImport: async (req, res, next) => {
+        try {
+            const { validRows } = req.body;
+            const data = await adminService.confirmClassImport(validRows);
+            res.status(201).json({ success: true, message: "Import lớp học thành công", data });
         } catch (error) { next(error); }
     },
 
@@ -122,6 +150,22 @@ export const adminController = {
                 data: result 
             });
         } catch (error) { next(error); }
+    },
+    validateStudentImport: async (req, res, next) => {
+        try {
+            const data = await adminService.validateStudentImport(req.params.id, req.body.rows);
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            next(error);
+        }
+    },
+    confirmStudentImport: async (req, res, next) => {
+        try {
+            const data = await adminService.confirmStudentImport(req.params.id, req.body.validRows);
+            res.status(201).json({ success: true, data, message: "Import thành công!" });
+        } catch (error) {
+            next(error);
+        }
     },
     unenrollStudent: async (req, res, next) => {
         try {
