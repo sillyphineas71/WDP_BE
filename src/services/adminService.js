@@ -14,8 +14,8 @@ import { ConflictError, NotFoundError } from "../errors/AppError.js";
 export const adminService = {
     // --- UC_ADM_10: QUẢN LÝ KHÓA HỌC ---
     getAllCourses: async () => {
-        const allCourses = await Course.findAll({ 
-            order: [["created_at", "DESC"]] 
+        const allCourses = await Course.findAll({
+            order: [["created_at", "DESC"]]
         });
         // Lọc trong JS để đảm bảo xử lý được cả null, undefined, false
         return allCourses.filter(c => !c.is_deleted);
@@ -28,10 +28,10 @@ export const adminService = {
         if (!data.expected_sessions) {
             throw new ConflictError("Số buổi học/Tín chỉ là bắt buộc");
         }
-        
+
         // Case insensitive unique check
-        const existing = await Course.findOne({ 
-            where: { code: Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('code')), data.code.toLowerCase()) } 
+        const existing = await Course.findOne({
+            where: { code: Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('code')), data.code.toLowerCase()) }
         });
         if (existing) throw new ConflictError("Mã khóa học đã tồn tại");
         return await Course.create(data);
@@ -45,11 +45,11 @@ export const adminService = {
             if (!/^[A-Za-z0-9_-]+$/.test(data.code)) {
                 throw new ConflictError("Mã môn học không hợp lệ");
             }
-            const existing = await Course.findOne({ 
-                where: { 
+            const existing = await Course.findOne({
+                where: {
                     code: Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('code')), data.code.toLowerCase()),
                     id: { [Sequelize.Op.ne]: id }
-                } 
+                }
             });
             if (existing) throw new ConflictError("Mã khóa học đã tồn tại");
         }
@@ -60,12 +60,12 @@ export const adminService = {
     deleteCourse: async (id) => {
         const course = await Course.findByPk(id);
         if (!course) throw new NotFoundError("Khóa học không tồn tại");
-        
+
         const linkedClasses = await Class.count({ where: { course_id: id } });
         if (linkedClasses > 0) {
             throw new ConflictError("Không thể xóa khóa học đã có lớp học gắn liền");
         }
-        
+
         // Soft delete
         return await course.update({ is_deleted: true });
     },
@@ -82,7 +82,7 @@ export const adminService = {
                 where: { code: "TEACHER" }
             }]
         });
-        return teachers; 
+        return teachers;
     },
 
     // --- UC_ADM_11: QUẢN LÝ LỚP HỌC ---
@@ -91,9 +91,9 @@ export const adminService = {
             include: [
                 { model: Course, as: "course", attributes: ["name", "code"] },
                 { model: User, as: "teacher", attributes: ["full_name"] },
-                { 
-                    model: Enrollment, 
-                    as: "enrollments", 
+                {
+                    model: Enrollment,
+                    as: "enrollments",
                     attributes: ["id"]
                 }
             ],
@@ -107,13 +107,13 @@ export const adminService = {
             include: [
                 { model: Course, as: "course" },
                 { model: User, as: "teacher", attributes: ["id", "full_name", "email"] },
-                { 
+                {
                     model: Enrollment, as: "enrollments",
                     // Sử dụng alias 'student' để khớp với định nghĩa quan hệ
-                    include: [{ model: User, as: "student", attributes: ["full_name", "email"] }] 
+                    include: [{ model: User, as: "student", attributes: ["full_name", "email"] }]
                 },
-                { 
-                    model: ClassSession, 
+                {
+                    model: ClassSession,
                     as: "sessions",
                     where: { status: { [Sequelize.Op.ne]: "cancelled" } },
                     required: false // LEFT OUTER JOIN để lấy class ngay cả khi không có session nào active
@@ -130,12 +130,12 @@ export const adminService = {
             throw new ConflictError("Ngày kết thúc phải diễn ra sau Ngày bắt đầu. Vui lòng chọn lại.");
         }
 
-        const existing = await Class.findOne({ 
-            where: { 
+        const existing = await Class.findOne({
+            where: {
                 name: classData.name,
                 course_id: classData.course_id,
                 semester: classData.semester
-            } 
+            }
         });
         if (existing) throw new ConflictError(`Lớp ${classData.name} đã tồn tại cho môn học này trong học kỳ hiện tại.`);
 
@@ -146,10 +146,10 @@ export const adminService = {
 
         // Tạo lớp học mới với đầy đủ các trường từ Popup Figma
         return await Class.create({
-            course_id: classData.course_id, 
+            course_id: classData.course_id,
             name: classData.name,
-            semester: classData.semester,      
-            max_capacity: classData.max_capacity || 30, 
+            semester: classData.semester,
+            max_capacity: classData.max_capacity || 30,
             start_date: classData.start_date,
             end_date: classData.end_date,
             teacher_id: classData.teacher_id || null,
@@ -173,14 +173,14 @@ export const adminService = {
             const checkName = data.name || cls.name;
             const checkSemester = data.semester || cls.semester;
             const checkCourse = data.course_id || cls.course_id;
-            
-             const existing = await Class.findOne({ 
-                where: { 
+
+            const existing = await Class.findOne({
+                where: {
                     name: checkName,
                     semester: checkSemester,
                     course_id: checkCourse,
                     id: { [Sequelize.Op.ne]: id }
-                } 
+                }
             });
             if (existing) throw new ConflictError(`Lớp ${checkName} đã tồn tại cho môn học này trong học kỳ hiện tại.`);
         }
@@ -262,12 +262,12 @@ export const adminService = {
         const targetDay = dayMap[day_of_week];
 
         if (targetDay === undefined) {
-             throw new ConflictError(`Thứ '${day_of_week}' không hợp lệ. Vui lòng chọn một ngày trong tuần.`);
+            throw new ConflictError(`Thứ '${day_of_week}' không hợp lệ. Vui lòng chọn một ngày trong tuần.`);
         }
 
         let currentDate = new Date(cls.start_date + "T00:00:00");
         const endDate = new Date(cls.end_date + "T00:00:00");
-        
+
         const sessionsToCreate = [];
 
         while (currentDate <= endDate) {
@@ -280,7 +280,7 @@ export const adminService = {
 
                 const sessionStart = new Date(`${dateStr}T${start_time}:00+07:00`);
                 const sessionEnd = new Date(`${dateStr}T${end_time}:00+07:00`);
-                
+
                 sessionsToCreate.push({
                     class_id: classId,
                     start_time: sessionStart,
@@ -329,7 +329,7 @@ export const adminService = {
         if (!sessionIds || sessionIds.length === 0) {
             throw new ConflictError("Vui lòng cung cấp danh sách buổi học cần sửa");
         }
-        
+
         // Pre-check to avoid "Delete then Fail" scenario (Conflict 409)
         const cls = await Class.findByPk(classId);
         if (!cls) throw new NotFoundError("Lớp học không tồn tại");
@@ -354,7 +354,7 @@ export const adminService = {
         }
 
         await adminService.deleteSessions(classId, sessionIds);
-        
+
         // Regenerate completely new sessions for the updated schedule
         return await adminService.addSession(classId, { day_of_week, start_time, end_time, room, teacher_id });
     },
@@ -384,13 +384,13 @@ export const adminService = {
 
         // Verify all students exist and are active
         const validStudents = await User.findAll({
-            where: { 
+            where: {
                 id: { [Sequelize.Op.in]: studentIds },
                 status: "active"
             },
             include: [{ model: Role, as: "role", where: { code: "STUDENT" } }]
         });
-        
+
         if (validStudents.length !== studentIds.length) {
             throw new ConflictError("Một số học viên được chọn không hợp lệ hoặc không phải là học sinh kích hoạt.");
         }
@@ -502,10 +502,10 @@ export const adminService = {
         const totalStudents = await User.count({ include: [{ model: Role, as: 'role', where: { code: 'STUDENT' } }], where: { status: 'active' } });
         const totalTeachers = await User.count({ include: [{ model: Role, as: 'role', where: { code: 'TEACHER' } }], where: { status: 'active' } });
         const activeClasses = await Class.count({ where: { status: 'active' } });
-        
+
         // submissionsToday
         const today = new Date();
-        today.setHours(0,0,0,0);
+        today.setHours(0, 0, 0, 0);
         const tomorrow = new Date(today);
         tomorrow.setDate(tomorrow.getDate() + 1);
         const submissionsToday = await Submission.count({
@@ -518,7 +518,7 @@ export const adminService = {
         });
 
         // calculate grade distribution for all grades
-        let A=0, B=0, C=0, D=0, F=0;
+        let A = 0, B = 0, C = 0, D = 0, F = 0;
         try {
             const [gradeRows] = await Grade.sequelize.query(
                 `SELECT final_score as score FROM grades WHERE final_score IS NOT NULL`
@@ -531,7 +531,7 @@ export const adminService = {
                 else if (score >= 5) D++;
                 else F++;
             });
-        } catch(e) {
+        } catch (e) {
             console.log('[Dashboard] Grade score column error:', e.message);
         }
         const gradeDistributionData = [
@@ -551,7 +551,7 @@ export const adminService = {
         });
         let studentsByCourseData = Object.keys(courseMap).slice(0, 4).map(k => ({ name: k, students: courseMap[k] }));
         if (studentsByCourseData.length === 0) {
-             studentsByCourseData = [{ name: "Không có dữ liệu", students: 0 }];
+            studentsByCourseData = [{ name: "Không có dữ liệu", students: 0 }];
         }
 
         // recentActivities
@@ -565,7 +565,7 @@ export const adminService = {
         }));
 
         if (recentActivities.length === 0) {
-             recentActivities.push({ id: 1, action: "Khởi tạo hệ thống", details: "Mọi tính năng sẵn sàng", time: "Hiện tại", color: "bg-blue-500" });
+            recentActivities.push({ id: 1, action: "Khởi tạo hệ thống", details: "Mọi tính năng sẵn sàng", time: "Hiện tại", color: "bg-blue-500" });
         }
 
         return {
@@ -579,12 +579,12 @@ export const adminService = {
     getReportData: async (semester, courseCode, dateRange) => {
         let classWhere = {};
         if (semester && semester !== "All Semesters") classWhere.semester = semester;
-        
+
         // Find course by name if it matches "CS101 - Introduction..." format or just the code
         if (courseCode && courseCode !== "All Courses") {
-             const code = courseCode.split(" ")[0]; // Get the ID part
-             const course = await Course.findOne({ where: { code } });
-             if (course) classWhere.course_id = course.id;
+            const code = courseCode.split(" ")[0]; // Get the ID part
+            const course = await Course.findOne({ where: { code } });
+            if (course) classWhere.course_id = course.id;
         }
 
         // Get grades for classes that match the filter
@@ -592,7 +592,7 @@ export const adminService = {
         if (classWhere.semester) whereClause += ` AND cl.semester = '${classWhere.semester.replace(/'/g, "''")}'`;
         if (classWhere.course_id) whereClause += ` AND cl.course_id = '${classWhere.course_id}'`;
 
-        let A=0, B=0, C=0, D=0, F=0;
+        let A = 0, B = 0, C = 0, D = 0, F = 0;
         try {
             const [gradeRows] = await Grade.sequelize.query(`
                 SELECT g.final_score as score 
@@ -610,17 +610,17 @@ export const adminService = {
                 else if (score >= 5) D++;
                 else F++;
             });
-        } catch(e) {
+        } catch (e) {
             console.log('[Reports] Grade query error:', e.message);
         }
 
-        const total = A+B+C+D+F || 1; // avoid /0
+        const total = A + B + C + D + F || 1; // avoid /0
         const allGrades = [
-            { name: `A`, pct: Math.round((A/total)*100), value: A, color: "#6366f1" },
-            { name: `B`, pct: Math.round((B/total)*100), value: B, color: "#a855f7" },
-            { name: `C`, pct: Math.round((C/total)*100), value: C, color: "#f43f5e" },
-            { name: `D`, pct: Math.round((D/total)*100), value: D, color: "#f59e0b" },
-            { name: `F`, pct: Math.round((F/total)*100), value: F, color: "#3b82f6" }
+            { name: `A`, pct: Math.round((A / total) * 100), value: A, color: "#6366f1" },
+            { name: `B`, pct: Math.round((B / total) * 100), value: B, color: "#a855f7" },
+            { name: `C`, pct: Math.round((C / total) * 100), value: C, color: "#f43f5e" },
+            { name: `D`, pct: Math.round((D / total) * 100), value: D, color: "#f59e0b" },
+            { name: `F`, pct: Math.round((F / total) * 100), value: F, color: "#3b82f6" }
         ];
 
         const gradePercentageData = allGrades
@@ -637,16 +637,16 @@ export const adminService = {
                 courseMap[name] = (courseMap[name] || 0) + 1;
             }
         });
-        
+
         let courseEnrollmentData = Object.keys(courseMap).map(k => ({ name: k, students: courseMap[k] }));
         if (courseEnrollmentData.length === 0) {
-             courseEnrollmentData = [ {name:"No Data", students: 0} ];
+            courseEnrollmentData = [{ name: "No Data", students: 0 }];
         }
 
         // Summary stats
         const totalStudents = Object.values(courseMap).reduce((s, v) => s + v, 0);
-        const gradeTotal = A+B+C+D+F;
-        const passCount = A+B+C+D; // score >= 5
+        const gradeTotal = A + B + C + D + F;
+        const passCount = A + B + C + D; // score >= 5
         const passRate = gradeTotal > 0 ? Math.round((passCount / gradeTotal) * 100) : 0;
         const aPercent = gradeTotal > 0 ? Math.round((A / gradeTotal) * 100) : 0;
 
@@ -675,7 +675,7 @@ export const adminService = {
                 else if (avg >= 5) avgGrade = 'D';
                 else avgGrade = 'F';
             }
-        } catch(e) {}
+        } catch (e) { }
 
         return {
             gradeDistributionData: allGrades.map(g => ({ name: g.name, students: g.value })),
@@ -711,10 +711,10 @@ export const adminService = {
     getTeacherActivity: async (semester, course, dateRange) => {
         // Build date range filter
         const dateRangeMap = {
-            'This Week':     `NOW() - INTERVAL '7 days'`,
-            'This Month':    `DATE_TRUNC('month', NOW())`,
+            'This Week': `NOW() - INTERVAL '7 days'`,
+            'This Month': `DATE_TRUNC('month', NOW())`,
             'This Semester': `NOW() - INTERVAL '6 months'`,
-            'Custom Range':  `NOW() - INTERVAL '28 days'`,
+            'Custom Range': `NOW() - INTERVAL '28 days'`,
         };
         const dateFrom = dateRangeMap[dateRange] || `DATE_TRUNC('month', NOW())`;
 
@@ -753,76 +753,65 @@ export const adminService = {
             return `CASE ${whenClauses.join(' ')} ELSE 1 END`;
         };
 
-        let weeklyRows = [];
+        // Separate queries for reliability
+        let qRows = [], mRows = [], gRows = [];
         try {
-            const query = `
-                WITH raw_data AS (
-                    SELECT
-                        ${buildCaseExpression('created_at', 'a')} AS week_num,
-                        1 AS quizzes, 0 AS materials, 0 AS graded
-                    FROM assessments a
-                    JOIN classes cl ON a.class_id = cl.id
-                    JOIN courses c2 ON cl.course_id = c2.id
-                    WHERE a.created_at >= ${dateFrom}
-                        AND UPPER(a.assessment_type::text) = 'QUIZ'
-                        ${semClause} ${courseClause}
-                    UNION ALL
-                    SELECT
-                        ${buildCaseExpression('created_at', 'm')} AS week_num,
-                        0 AS quizzes, 1 AS materials, 0 AS graded
-                    FROM materials m
-                    JOIN classes cl ON m.class_id = cl.id
-                    JOIN courses c2 ON cl.course_id = c2.id
-                    WHERE m.created_at >= ${dateFrom}
-                        ${semClause} ${courseClause}
-                    UNION ALL
-                    SELECT
-                        ${buildCaseExpression('graded_at', 'g')} AS week_num,
-                        0 AS quizzes, 0 AS materials, 1 AS graded
-                    FROM grades g
-                    JOIN submissions s ON g.submission_id = s.id
-                    JOIN assessments a ON s.assessment_id = a.id
-                    JOIN classes cl ON a.class_id = cl.id
-                    JOIN courses c2 ON cl.course_id = c2.id
-                    WHERE g.graded_at >= ${dateFrom}
-                        AND g.graded_at IS NOT NULL
-                        ${semClause} ${courseClause}
-                )
-                SELECT week_num,
-                    SUM(quizzes)::int AS quizzes,
-                    SUM(materials)::int AS materials,
-                    SUM(graded)::int AS graded
-                FROM raw_data
+            const qQuery = `
+                SELECT ${buildCaseExpression('created_at', 'a')} AS week_num, COUNT(a.id)::int AS count
+                FROM assessments a
+                JOIN classes cl ON a.class_id = cl.id
+                JOIN courses c2 ON cl.course_id = c2.id
+                WHERE a.created_at >= ${dateFrom} AND UPPER(a.type::text) = 'QUIZ'
+                ${semClause} ${courseClause}
                 GROUP BY week_num
-                ORDER BY week_num
             `;
-            const [rows] = await Grade.sequelize.query(query);
-            weeklyRows = rows;
-            // Debug logging
-            try {
-                const fs = await import('fs');
-                fs.writeFileSync('debug_teacher_data.json', JSON.stringify({
-                    dateRange,
-                    numBuckets,
-                    dayStep,
-                    dateFrom,
-                    rows: weeklyRows
-                }, null, 2));
-            } catch (e) {}
+            const [qr] = await Grade.sequelize.query(qQuery);
+            qRows = qr;
+
+            const mQuery = `
+                SELECT ${buildCaseExpression('created_at', 'm')} AS week_num, COUNT(m.id)::int AS count
+                FROM materials m
+                JOIN classes cl ON m.class_id = cl.id
+                JOIN courses c2 ON cl.course_id = c2.id
+                WHERE m.created_at >= ${dateFrom}
+                ${semClause} ${courseClause}
+                GROUP BY week_num
+            `;
+            const [mr] = await Grade.sequelize.query(mQuery);
+            mRows = mr;
+
+            const gQuery = `
+                SELECT ${buildCaseExpression('graded_at', 'g')} AS week_num, COUNT(g.id)::int AS count
+                FROM grades g
+                JOIN submissions s ON g.submission_id = s.id
+                JOIN assessments a ON s.assessment_id = a.id
+                JOIN classes cl ON a.class_id = cl.id
+                JOIN courses c2 ON cl.course_id = c2.id
+                WHERE g.graded_at >= ${dateFrom} AND g.graded_at IS NOT NULL
+                ${semClause} ${courseClause}
+                GROUP BY week_num
+            `;
+            const [gr] = await Grade.sequelize.query(gQuery);
+            gRows = gr;
         } catch (err) {
-            console.error('[getTeacherActivity] weekly query error:', err.message);
+            console.error('[getTeacherActivity] query error:', err.message);
         }
 
         // Build chart data
         const chartMap = {};
         for (let i = 1; i <= numBuckets; i++) chartMap[i] = { quizzes: 0, materials: 0, graded: 0 };
-        weeklyRows.forEach(r => {
-            const w = parseInt(r.week_num);
-            if (chartMap[w]) {
-                chartMap[w].quizzes += r.quizzes || 0;
-                chartMap[w].materials += r.materials || 0;
-                chartMap[w].graded += r.graded || 0;
-            }
+
+        qRows.forEach(r => {
+            const w = parseInt(r.week_num ?? r.WEEK_NUM ?? r.Week_Num);
+            if (chartMap[w]) chartMap[w].quizzes += parseInt(r.count ?? r.COUNT) || 0;
+        });
+        mRows.forEach(r => {
+            const w = parseInt(r.week_num ?? r.WEEK_NUM ?? r.Week_Num);
+            if (chartMap[w]) chartMap[w].materials += parseInt(r.count ?? r.COUNT) || 0;
+        });
+        gRows.forEach(r => {
+            const w = parseInt(r.week_num ?? r.WEEK_NUM ?? r.Week_Num);
+            if (chartMap[w]) chartMap[w].graded += parseInt(r.count ?? r.COUNT) || 0;
         });
         const activityChartData = Array.from({ length: numBuckets }, (_, i) => ({
             name: `${bucketLabel} ${i + 1}`,
@@ -839,12 +828,14 @@ export const adminService = {
                 FROM assessments a
                 JOIN classes cl ON a.class_id = cl.id
                 JOIN courses c2 ON cl.course_id = c2.id
-                WHERE UPPER(a.assessment_type::text) = 'QUIZ'
+                WHERE UPPER(a.type::text) = 'QUIZ'
                   AND a.created_at >= ${dateFrom}
                   ${semClause} ${courseClause}
             `);
             total_quizzes = r?.total_quizzes || 0;
-        } catch(e) {}
+        } catch (e) {
+            console.error('[getTeacherActivity] total_quizzes error:', e.message);
+        }
 
         try {
             const [[r]] = await Grade.sequelize.query(`
@@ -856,7 +847,7 @@ export const adminService = {
                   ${semClause} ${courseClause}
             `);
             total_materials = r?.total_materials || 0;
-        } catch(e) {}
+        } catch (e) { }
 
         try {
             const [[r]] = await Grade.sequelize.query(`
@@ -871,14 +862,14 @@ export const adminService = {
                   ${semClause} ${courseClause}
             `);
             total_graded = r?.total_graded || 0;
-        } catch(e) {}
+        } catch (e) { }
         return {
             activityChartData,
             bucketLabel,
             totals: {
-                quizzesCreated:    total_quizzes    || 0,
-                materialsUploaded: total_materials  || 0,
-                assignmentsGraded: total_graded     || 0
+                quizzesCreated: total_quizzes || 0,
+                materialsUploaded: total_materials || 0,
+                assignmentsGraded: total_graded || 0
             }
         };
     },
@@ -897,14 +888,14 @@ export const adminService = {
 
         const now = new Date();
         // Spread data across 6 months (approx 180 days)
-        const buckets = [5, 35, 65, 95, 125, 155]; 
-        
+        const buckets = [5, 35, 65, 95, 125, 155];
+
         for (const days of buckets) {
             const date = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-            
+
             await Assessment.create({ class_id: cls.id, title: `Debug Quiz Day ${days}`, assessment_type: 'QUIZ', created_at: date });
             await Material.create({ class_id: cls.id, title: `Debug Material Day ${days}`, created_at: date });
-            
+
             const ass = await Assessment.create({ class_id: cls.id, title: `Debug Assignment Day ${days}`, assessment_type: 'ASSIGNMENT', created_at: date });
             const sub = await Submission.create({ assessment_id: ass.id, student_id: student.id, status: 'SUBMITTED', created_at: date });
             await Grade.create({ submission_id: sub.id, score: 90, graded_at: date, teacher_id: teacher.id });
