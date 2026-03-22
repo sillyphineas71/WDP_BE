@@ -70,6 +70,73 @@ export const adminService = {
         return await course.update({ is_deleted: true });
     },
 
+    validateCourseImport: async (rows) => {
+        const validRows = [];
+        const invalidRows = [];
+
+        // Lấy tất cả mã môn hiện có (uppercase để so sánh)
+        const courses = await Course.findAll({ attributes: ["code"] });
+        const existingCodes = courses.map(c => c.code.toUpperCase());
+
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const code = String(row["Mã môn"] || "").trim();
+            const name = String(row["Tên môn"] || "").trim();
+            const expected_sessions = row["Số tiết"];
+            const description = String(row["Mô tả"] || "").trim();
+
+            if (!code || !name) {
+                invalidRows.push({ rowNumber: i + 1, code, name, reason: "Thiếu trường dữ liệu bắt buộc (Mã môn, Tên môn)." });
+                continue;
+            }
+
+            if (!/^[A-Za-z0-9_-]+$/.test(code)) {
+                invalidRows.push({ rowNumber: i + 1, code, name, reason: "Mã môn học không hợp lệ (không chứa ký tự đặc biệt)." });
+                continue;
+            }
+
+            if (expected_sessions === undefined || expected_sessions === null || isNaN(Number(expected_sessions)) || Number(expected_sessions) <= 0) {
+                invalidRows.push({ rowNumber: i + 1, code, name, reason: "Số tiết phải là số nguyên dương." });
+                continue;
+            }
+
+            if (existingCodes.includes(code.toUpperCase())) {
+                invalidRows.push({ rowNumber: i + 1, code, name, reason: "Mã môn học đã tồn tại trong hệ thống." });
+                continue;
+            }
+            
+            if (validRows.some(vr => vr.code.toUpperCase() === code.toUpperCase())) {
+                invalidRows.push({ rowNumber: i + 1, code, name, reason: "Mã môn học bị trùng lặp bên trong file Import." });
+                continue;
+            }
+
+            validRows.push({ code, name, expected_sessions: Number(expected_sessions), description });
+        }
+
+        return { validRows, invalidRows };
+    },
+
+    confirmCourseImport: async (validRows) => {
+        let successCount = 0;
+        const failures = [];
+
+        for (const row of validRows) {
+            try {
+                await Course.create({
+                    code: row.code,
+                    name: row.name,
+                    expected_sessions: row.expected_sessions,
+                    description: row.description,
+                    status: "active"
+                });
+                successCount++;
+            } catch (error) {
+                failures.push({ code: row.code, reason: error.message });
+            }
+        }
+        return { successCount, failures };
+    },
+
     // --- UC TEACHER REPOSITORIES ---
     getAllTeachers: async () => {
         // Find all active teachers (Role: teacher, status: active)
@@ -186,6 +253,126 @@ export const adminService = {
         }
 
         return await cls.update(data);
+    },
+
+    validateClassImport: async (rows) => {
+        const validRows = [];
+        const invalidRows = [];
+        const classUniquenessCheck = new Set(); // courseCode_semester_className
+
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const { course_code, semester, name, start_date, end_date, max_capacity, teacher_email } = row;
+
+            if (!course_code || !semester || !name || !start_date || !end_date) {
+                invalidRows.push({ ...row, rowNumber: i + 1, reason: "Thiếu trường bắt buộc (Mã môn, Học kỳ, Tên lớp, Ngày BĐ, Kết thúc)" });
+                continue;
+            }
+
+            // Check Dates
+            const start = new Date(start_date);
+            const end = new Date(end_date);
+            if (isNaN(start) || isNaN(end) || end <= start) {
+                invalidRows.push({ ...row, rowNumber: i + 1, reason: "Ngày kết thúc phải lớn hơn ngày bắt đầu và đúng định dạng." });
+                continue;
+            }
+
+            // Check Course exists (Case-insensitive)
+            const course = await Course.findOne({ 
+                where: Sequelize.where(
+                    Sequelize.fn('LOWER', Sequelize.col('code')), 
+                    course_code.toLowerCase()
+                )
+            });
+            if (!course) {
+                invalidRows.push({ ...row, rowNumber: i + 1, reason: `Mã môn gốc "${course_code}" không tồn tại trên hệ thống.` });
+                continue;
+            }
+
+            // Check Unique Class inside DB (Case-insensitive)
+            const existingClassInDB = await Class.findOne({
+                where: { 
+                    course_id: course.id,
+                    [Sequelize.Op.and]: [
+                        Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('name')), name.toLowerCase()),
+                        Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('semester')), semester.toLowerCase())
+                    ]
+                }
+            });
+
+            if (existingClassInDB) {
+                invalidRows.push({ ...row, rowNumber: i + 1, reason: `Lớp "${name}" đã tồn tại trong học kỳ "${semester}" của môn "${course_code}".` });
+                continue;
+            }
+
+            // Check unique in file
+            const classKey = `${course_code}_${semester}_${name}`;
+            if (classUniquenessCheck.has(classKey)) {
+                invalidRows.push({ ...row, rowNumber: i + 1, reason: `Bị trùng lặp thông tin lớp "${name}" ngay trong file Excel này.` });
+                continue;
+            }
+            classUniquenessCheck.add(classKey);
+
+            // Check Teacher Emal
+            let teacherId = null;
+            let teacherName = "";
+            if (teacher_email) {
+                const teacherCount = await User.findOne({
+                    where: { email: String(teacher_email).toLowerCase(), status: "active" },
+                    include: [{ model: Role, as: "role", where: { code: "TEACHER" } }]
+                });
+
+                if (!teacherCount) {
+                    invalidRows.push({ ...row, rowNumber: i + 1, reason: `Không tìm thấy tài khoản Giáo viên có email là "${teacher_email}".` });
+                    continue;
+                }
+                teacherId = teacherCount.id;
+                teacherName = teacherCount.full_name;
+            }
+
+            validRows.push({
+                course_id: course.id,
+                course_code,
+                name,
+                semester,
+                start_date: start_date,
+                end_date: end_date,
+                max_capacity: Number(max_capacity) || 30,
+                teacher_id: teacherId,
+                teacher_email: teacher_email || "",
+                teacher_name: teacherName,
+                rowNumber: i + 1
+            });
+        }
+
+        return { validRows, invalidRows };
+    },
+
+    confirmClassImport: async (validRows) => {
+        let successCount = 0;
+        const failures = [];
+
+        for (const row of validRows) {
+            try {
+                let initialStatus = "active";
+                if (new Date(row.start_date) > new Date()) initialStatus = "upcoming";
+
+                await Class.create({
+                    course_id: row.course_id,
+                    name: row.name,
+                    semester: row.semester,
+                    max_capacity: row.max_capacity,
+                    start_date: row.start_date,
+                    end_date: row.end_date,
+                    teacher_id: row.teacher_id,
+                    status: initialStatus
+                });
+                successCount++;
+            } catch (error) {
+                failures.push({ name: row.name, reason: error.message });
+            }
+        }
+        return { successCount, failures };
     },
 
     // --- UC_ADM_12: PHÂN CÔNG GIẢNG VIÊN ---
@@ -410,6 +597,11 @@ export const adminService = {
             throw new ConflictError("Tất cả học viên được chọn đã có trong lớp này rồi.");
         }
 
+        const currentEnrollmentCount = await Enrollment.count({ where: { class_id: classId } });
+        if (currentEnrollmentCount + newStudentIds.length > cls.max_capacity) {
+            throw new ConflictError(`Không thể thêm ${newStudentIds.length} học sinh mới vì sẽ vượt sĩ số tối đa của lớp (${cls.max_capacity}). Lớp hiện có ${currentEnrollmentCount} học sinh.`);
+        }
+
         // Create new enrollments
         const enrollmentsToCreate = newStudentIds.map(userId => ({
             class_id: classId,
@@ -440,41 +632,146 @@ export const adminService = {
             include: [{ model: Role, as: "role", where: { code: "STUDENT" } }]
         });
 
-        if (foundStudents.length === 0) {
-            throw new ConflictError("Các email trong file không trùng khớp với bất kỳ học viên nào trên hệ thống.");
-        }
+        const foundEmails = foundStudents.map(s => s.email.toLowerCase());
+        const failedEmails = targetEmails.filter(e => !foundEmails.includes(e));
 
         const studentIds = foundStudents.map(s => s.id);
+        let newStudentIds = [];
+        let alreadyEnrolledCount = 0;
 
-        // Check if already enrolled
-        const existingEnrollments = await Enrollment.findAll({
-            where: {
-                class_id: classId,
-                user_id: { [Sequelize.Op.in]: studentIds }
-            }
-        });
+        if (studentIds.length > 0) {
+            // Check if already enrolled
+            const existingEnrollments = await Enrollment.findAll({
+                where: {
+                    class_id: classId,
+                    user_id: { [Sequelize.Op.in]: studentIds }
+                }
+            });
 
-        const existingIds = existingEnrollments.map(e => e.user_id);
-        const newStudentIds = studentIds.filter(id => !existingIds.includes(id));
-
-        if (newStudentIds.length === 0) {
-            throw new ConflictError(`Tất cả ${foundStudents.length} học viên tìm thấy đã nằm trong lớp này.`);
+            const existingIds = existingEnrollments.map(e => e.user_id);
+            newStudentIds = studentIds.filter(id => !existingIds.includes(id));
+            alreadyEnrolledCount = existingIds.length;
         }
 
-        // Create new enrollments
-        const enrollmentsToCreate = newStudentIds.map(userId => ({
-            class_id: classId,
-            user_id: userId,
-            status: "active"
-        }));
+        if (newStudentIds.length > 0) {
+            const currentEnrollmentCount = await Enrollment.count({ where: { class_id: classId } });
+            if (currentEnrollmentCount + newStudentIds.length > cls.max_capacity) {
+                throw new ConflictError(`Lớp học sẽ vượt quá sĩ số tối đa (${cls.max_capacity}) nếu nhập thêm ${newStudentIds.length} học sinh. Hiện tại lớp đã có ${currentEnrollmentCount} học sinh.`);
+            }
 
-        await Enrollment.bulkCreate(enrollmentsToCreate);
+            // Create new enrollments
+            const enrollmentsToCreate = newStudentIds.map(userId => ({
+                class_id: classId,
+                user_id: userId,
+                status: "active"
+            }));
+
+            await Enrollment.bulkCreate(enrollmentsToCreate);
+        }
 
         return {
             total_found: foundStudents.length,
             total_imported: newStudentIds.length,
-            already_enrolled: foundStudents.length - newStudentIds.length
+            already_enrolled: alreadyEnrolledCount,
+            failed_emails: failedEmails
         };
+    },
+
+    validateStudentImport: async (classId, rows) => {
+        const cls = await Class.findByPk(classId);
+        if (!cls) throw new NotFoundError("Lớp học không tồn tại");
+
+        const validRows = [];
+        const invalidRows = [];
+
+        // Lấy danh sách email từ file
+        const rawEmails = rows.map(r => String(r.email || '').toLowerCase().trim()).filter(e => e);
+
+        // Fetch students all at once
+        const foundStudents = await User.findAll({
+            where: {
+                email: { [Sequelize.Op.in]: rawEmails },
+                status: "active"
+            },
+            include: [{ model: Role, as: "role", where: { code: "STUDENT" } }]
+        });
+        const foundStudentMap = new Map();
+        foundStudents.forEach(s => foundStudentMap.set(s.email.toLowerCase(), s));
+
+        // Fetch current enrollments
+        const existingEnrollments = await Enrollment.findAll({ where: { class_id: classId } });
+        const existingUserIds = new Set(existingEnrollments.map(e => e.user_id));
+        const currentEnrollmentCount = existingUserIds.size;
+
+        let projectedNewCount = 0;
+        const seenEmailsInFile = new Set(); // Prevent duplicates in the same file
+
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const rawEmail = String(row.email || "").toLowerCase().trim();
+
+            if (!rawEmail) {
+                invalidRows.push({ ...row, rowNumber: i + 1, reason: "Thiếu cột Email" });
+                continue;
+            }
+
+            if (seenEmailsInFile.has(rawEmail)) {
+                invalidRows.push({ ...row, rowNumber: i + 1, reason: "Bị trùng lặp email ngay trong file Excel" });
+                continue;
+            }
+            seenEmailsInFile.add(rawEmail);
+
+            const student = foundStudentMap.get(rawEmail);
+            if (!student) {
+                invalidRows.push({ ...row, rowNumber: i + 1, reason: "Tài khoản học sinh không tồn tại hoặc sai vai trò" });
+                continue;
+            }
+
+            if (existingUserIds.has(student.id)) {
+                invalidRows.push({ ...row, rowNumber: i + 1, reason: "Học sinh này đã nằm trong lớp" });
+                continue;
+            }
+
+            if (currentEnrollmentCount + projectedNewCount + 1 > cls.max_capacity) {
+                invalidRows.push({ ...row, rowNumber: i + 1, reason: `Vượt quá sĩ số tối đa của lớp (${cls.max_capacity})` });
+                continue;
+            }
+
+            validRows.push({
+                ...row,
+                rowNumber: i + 1,
+                user_id: student.id,
+                full_name: student.full_name,
+                email: student.email,
+                student_code: student.student_code || "---"
+            });
+            projectedNewCount++;
+        }
+
+        return { validRows, invalidRows };
+    },
+
+    confirmStudentImport: async (classId, validRows) => {
+        const cls = await Class.findByPk(classId);
+        if (!cls) throw new NotFoundError("Lớp học không tồn tại");
+
+        let successCount = 0;
+        const failures = [];
+
+        for (const row of validRows) {
+            try {
+                await Enrollment.create({
+                    class_id: classId,
+                    user_id: row.user_id,
+                    status: "active"
+                });
+                successCount++;
+            } catch (error) {
+                failures.push({ name: row.email, reason: error.message });
+            }
+        }
+
+        return { successCount, failures };
     },
 
     unenrollStudent: async (classId, studentId) => {
@@ -911,9 +1208,22 @@ export const adminService = {
         const classNames = [...new Set(rows.map(r => r.class_name?.trim()).filter(Boolean))];
         const teacherEmails = [...new Set(rows.map(r => r.teacher_email?.trim()).filter(Boolean))];
 
-        const classes = await Class.findAll({ where: { name: classNames } });
+        const classNamesLower = classNames.map(name => name.toLowerCase());
+        const teacherEmailsLower = teacherEmails.map(email => email.toLowerCase());
+
+        const classes = await Class.findAll({ 
+            where: Sequelize.where(
+                Sequelize.fn('LOWER', Sequelize.col('name')), 
+                { [Sequelize.Op.in]: classNamesLower }
+            ) 
+        });
         const teachers = await User.findAll({
-            where: { email: teacherEmails, status: "active" },
+            where: {
+                status: "active",
+                [Sequelize.Op.and]: [
+                    Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('email')), { [Sequelize.Op.in]: teacherEmailsLower })
+                ]
+            },
             include: [{ model: Role, as: "role", where: { code: "TEACHER" } }]
         });
 
@@ -958,7 +1268,7 @@ export const adminService = {
             const startStr = row.start_time?.trim() || "";
             const endStr = row.end_time?.trim() || "";
             const roomNum = row.room?.trim() || "";
-            const topicStr = row.topic?.trim() || "Class session";
+            const topicStr = row.topic?.trim() || "Buổi học";
 
             if (!cName) errors.push("Thiếu Tên lớp");
             if (!tEmail) errors.push("Thiếu Email Giảng viên");
@@ -974,8 +1284,8 @@ export const adminService = {
             const cls = classMap[cName.toLowerCase()];
             const teacher = teacherMap[tEmail.toLowerCase()];
 
-            if (!cls) errors.push(`Lớp '${cName}' không tồn tại hoặc không Active`);
-            if (!teacher) errors.push(`Giảng viên '${tEmail}' không tồn tại hoặc không Active`);
+            if (!cls) errors.push(`Lớp '${cName}' không tồn tại hoặc không hoạt động`);
+            if (!teacher) errors.push(`Giảng viên '${tEmail}' không tồn tại hoặc không hoạt động`);
 
             if (errors.length > 0) {
                 invalidRows.push({ ...row, rowNum, error: errors.join(", ") });
@@ -1048,6 +1358,7 @@ export const adminService = {
                     status: "scheduled",
                     class_name: cName,
                     teacher_email: tEmail,
+                    teacher_name: teacher.full_name,
                     date: dateStr,
                     original_start: startStr,
                     original_end: endStr

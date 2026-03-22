@@ -1082,7 +1082,7 @@ export const teacherService = {
                 {
                     model: Assessment, as: "assessment",
                     where: { class_id: { [Op.in]: classIds } },
-                    attributes: ["title", "due_at"]
+                    attributes: ["id", "title", "due_at"]
                 },
                 {
                     model: User,
@@ -1103,7 +1103,8 @@ export const teacherService = {
                 assessmentTitle: sub.assessment?.title,
                 timestamp: sub.submitted_at,
                 isLate: isLate,
-                message: `${sub.student?.full_name} đã nộp bài "${sub.assessment?.title || "không rõ"}"` + (isLate ? " (Muộn)" : "")
+                message: `${sub.student?.full_name} đã nộp bài "${sub.assessment?.title || "không rõ"}"` + (isLate ? " (Muộn)" : ""),
+                link: `/teacher/assessments/${sub.assessment?.id}/submissions`
             };
         });
 

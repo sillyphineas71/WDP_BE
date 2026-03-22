@@ -68,4 +68,32 @@ export const userManagementController = {
             next(error);
         }
     },
+
+    // ── UC_ADM_05: Bulk Import Validate (A1) ───────────────────────
+    validateImport: async (req, res, next) => {
+        try {
+            const { rows } = req.body;
+            if (!rows || !Array.isArray(rows)) {
+                return res.status(400).json({ success: false, message: "Dữ liệu 'rows' không hợp lệ." });
+            }
+            const data = await userManagementService.validateUserImport(rows);
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            next(error);
+        }
+    },
+
+    // ── UC_ADM_05: Bulk Import Confirm (A1) ────────────────────────
+    confirmImport: async (req, res, next) => {
+        try {
+            const { validRows } = req.body;
+            if (!validRows || !Array.isArray(validRows)) {
+                return res.status(400).json({ success: false, message: "Dữ liệu 'validRows' không hợp lệ." });
+            }
+            const data = await userManagementService.confirmUserImport(validRows);
+            res.status(201).json({ success: true, message: `Import thành công ${data.successCount} tài khoản.`, data });
+        } catch (error) {
+            next(error);
+        }
+    },
 };
