@@ -7,8 +7,20 @@ import { Assessment } from "../models/Assessment.js";
 import { Submission } from "../models/Submission.js";
 import { Grade } from "../models/Grade.js";
 import { User } from "../models/User.js";
-import { Sequelize } from "sequelize";
+import { Sequelize, Op } from "sequelize";
 import { NotFoundError } from "../errors/AppError.js";
+
+/**
+ * Helper to get weight from assessment. 
+ * Checks both assessment.weight and assessment.settings_json.weight
+ */
+const getAssessmentWeight = (assessment) => {
+    if (assessment.weight != null && assessment.weight > 0) return parseFloat(assessment.weight);
+    if (assessment.settings_json && assessment.settings_json.weight != null) {
+        return parseFloat(assessment.settings_json.weight);
+    }
+    return 0;
+};
 
 export const studentGradeService = {
 
@@ -35,9 +47,12 @@ export const studentGradeService = {
             const cls = enrollment.class;
             if (!cls) continue;
 
-            // Get all assessments for this class
+            // Get all assessments for this class (not draft)
             const assessments = await Assessment.findAll({
-                where: { class_id: cls.id },
+                where: { 
+                    class_id: cls.id,
+                    status: { [Op.ne]: 'draft' }
+                },
             });
 
             // Get student's submissions + grades for published grades
@@ -53,7 +68,7 @@ export const studentGradeService = {
 
                 if (submission?.grade?.is_published) {
                     publishedCount++;
-                    const weight = assessment.weight || 0;
+                    const weight = getAssessmentWeight(assessment);
                     totalWeight += weight;
                     if (submission.grade.final_score !== null && submission.grade.final_score !== undefined) {
                         weightedScore += parseFloat(submission.grade.final_score) * (weight / 100);
@@ -92,7 +107,10 @@ export const studentGradeService = {
         if (!cls) throw new NotFoundError("Lớp học không tồn tại.");
 
         const assessments = await Assessment.findAll({
-            where: { class_id: classId },
+            where: { 
+                class_id: classId,
+                status: { [Op.ne]: 'draft' }
+            },
             order: [["created_at", "ASC"]],
         });
 
@@ -133,7 +151,7 @@ export const studentGradeService = {
                 assessment_id: assessment.id,
                 title: assessment.title,
                 type: assessment.type || "ESSAY",
-                weight: assessment.weight || 0,
+                weight: getAssessmentWeight(assessment),
                 max_score: assessment.max_score || 10,
                 score,
                 status,

@@ -13,6 +13,25 @@ function buildInstructionsWithMeta(instructions, meta) {
     return text ? text + metaBlock : metaBlock.trim();
 }
 
+/**
+ * Parse quiz settings from instructions or settings_json
+ */
+function parseQuizSettings(instructions, settingsJson) {
+    if (settingsJson && typeof settingsJson === 'object' && Object.keys(settingsJson).length > 0) {
+        return settingsJson;
+    }
+    if (!instructions) return {};
+    const marker = "[quiz_settings]";
+    const idx = instructions.lastIndexOf(marker);
+    if (idx === -1) return {};
+    const jsonPart = instructions.slice(idx + marker.length).trim();
+    try {
+        return JSON.parse(jsonPart);
+    } catch {
+        return {};
+    }
+}
+
 export const teacherService = {
 
     // ================================================================
@@ -611,7 +630,7 @@ export const teacherService = {
             throw new NotFoundError("Lớp học không tồn tại hoặc bạn không quản lý lớp này.");
         }
 
-        return await Assessment.findAll({
+        const assessments = await Assessment.findAll({
             where: { class_id: classId },
             include: [
                 {
@@ -622,7 +641,29 @@ export const teacherService = {
             ],
             order: [["created_at", "DESC"]],
         });
+
+        // Auto-close expired published assessments (supplement to the 30-min cron job)
+        const now = new Date();
+        const autoClosePromises = assessments
+            .filter(a => {
+                const deadline = a.cutoff_at ? new Date(a.cutoff_at) : (a.due_at ? new Date(a.due_at) : null);
+                return a.status === 'published' && deadline && now > deadline;
+            })
+            .map(a => {
+                a.status = 'closed'; // Update in-memory so the returned list is already correct
+                return a.update({ status: 'closed' }).catch(err =>
+                    console.error(`[AutoClose] Lỗi khi tự động đóng assessment ${a.id}:`, err)
+                );
+            });
+
+        if (autoClosePromises.length > 0) {
+            await Promise.all(autoClosePromises);
+            console.log(`[AutoClose] Đã tự động đóng ${autoClosePromises.length} bài tập quá hạn trong lớp ${classId}.`);
+        }
+
+        return assessments;
     },
+
 
     getMyClasses: async (teacherId) => {
         const classes = await Class.findAll({
@@ -733,13 +774,14 @@ export const teacherService = {
 
         const processedSubmissions = submissions.map(sub => {
             const subJson = sub.toJSON();
-            if (
-                subJson.status === 'submitted' &&
-                assessment.due_at &&
-                new Date(subJson.submitted_at) > new Date(assessment.due_at)
-            ) {
-                subJson.status = 'submitted_late';
-            }
+            let isCheat = false;
+            try {
+                if (subJson.content_text) {
+                    const meta = JSON.parse(subJson.content_text);
+                    isCheat = !!meta.isCheat;
+                }
+            } catch (e) {}
+            subJson.is_cheat = isCheat;
             return subJson;
         });
 
@@ -784,7 +826,18 @@ export const teacherService = {
         });
 
         if (!submission) throw new Error("Không tìm thấy bài nộp.");
-        return submission;
+        
+        const subJson = submission.toJSON();
+        let isCheat = false;
+        try {
+            if (subJson.content_text) {
+                const meta = JSON.parse(subJson.content_text);
+                isCheat = !!meta.isCheat;
+            }
+        } catch (e) {}
+        subJson.is_cheat = isCheat;
+
+        return subJson;
     },
 
     gradeSubmission: async (teacherId, submissionId, gradeData) => {
@@ -1042,7 +1095,7 @@ export const teacherService = {
         });
 
         const recentActivities = recentSubmissions.map(sub => {
-            const isLate = sub.status === 'submitted_late' || (sub.assessment?.due_at && new Date(sub.submitted_at) > new Date(sub.assessment?.due_at));
+            const isLate = (sub.assessment?.due_at && new Date(sub.submitted_at) > new Date(sub.assessment?.due_at));
             return {
                 id: sub.id,
                 type: 'SUBMISSION',
@@ -1141,7 +1194,7 @@ export const teacherService = {
         }
 
         // 2. Lấy tất cả submissions kèm thông tin sinh viên + điểm
-        const submissions = await Submission.findAll({
+        const allSubmissions = await Submission.findAll({
             where: { assessment_id: assessmentId },
             include: [
                 {
@@ -1158,7 +1211,80 @@ export const teacherService = {
             order: [['submitted_at', 'DESC']]
         });
 
-        // 3. Tính phổ điểm (Score Distribution) theo % của max_score
+        // 3. Phân nhóm theo sinh viên và áp dụng gradeMethod
+        const settings = parseQuizSettings(assessment.instructions, assessment.settings_json);
+        const gradeMethod = settings.gradeMethod || "highest";
+
+        const parseMeta = (txt) => {
+            if (!txt) return {};
+            try { return JSON.parse(txt); } catch { return {}; }
+        };
+
+        const studentMap = new Map();
+        for (const sub of allSubmissions) {
+            const sid = String(sub.student_id);
+            if (!studentMap.has(sid)) studentMap.set(sid, []);
+            studentMap.get(sid).push(sub);
+        }
+
+        const selectedSubmissions = [];
+        for (const [sid, subs] of studentMap.entries()) {
+            const finishedSubs = subs.filter(s => ['submitted', 'graded'].includes(s.status));
+            
+            if (finishedSubs.length === 0) {
+                const subJson = subs[0].toJSON();
+                subJson.attempt_count = subs.length;
+                const meta = parseMeta(subJson.content_text);
+                subJson.is_cheat = !!meta.isCheat;
+                selectedSubmissions.push(subJson); // Lấy bản ghi mới nhất (thường là in_progress)
+                continue;
+            }
+
+            if (gradeMethod === "highest") {
+                finishedSubs.sort((a, b) => {
+                    const scoreA = a.grade?.final_score != null ? parseFloat(a.grade.final_score) : -1;
+                    const scoreB = b.grade?.final_score != null ? parseFloat(b.grade.final_score) : -1;
+                    if (scoreB !== scoreA) return scoreB - scoreA;
+                    return new Date(b.submitted_at) - new Date(a.submitted_at);
+                });
+                const subJson = finishedSubs[0].toJSON();
+                subJson.attempt_count = subs.length;
+                const meta = parseMeta(subJson.content_text);
+                subJson.is_cheat = !!meta.isCheat;
+                selectedSubmissions.push(subJson);
+            } else if (gradeMethod === "last") {
+                finishedSubs.sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
+                const subJson = finishedSubs[0].toJSON();
+                subJson.attempt_count = subs.length;
+                const meta = parseMeta(subJson.content_text);
+                subJson.is_cheat = !!meta.isCheat;
+                selectedSubmissions.push(subJson);
+            } else if (gradeMethod === "average") {
+                const totalScore = finishedSubs.reduce((sum, s) => sum + (s.grade?.final_score != null ? parseFloat(s.grade.final_score) : 0), 0);
+                const avgScore = totalScore / finishedSubs.length;
+                
+                const latest = [...finishedSubs].sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at))[0];
+                const subJson = latest.toJSON();
+                if (subJson.grade) {
+                    subJson.grade.final_score = Math.round(avgScore * 100) / 100;
+                } else {
+                    subJson.grade = { final_score: Math.round(avgScore * 100) / 100 };
+                }
+                subJson.is_average = true;
+                subJson.attempt_count = subs.length;
+                const meta = parseMeta(subJson.content_text);
+                subJson.is_cheat = !!meta.isCheat;
+                selectedSubmissions.push(subJson);
+            } else {
+                const subJson = finishedSubs[0].toJSON();
+                subJson.attempt_count = subs.length;
+                const meta = parseMeta(subJson.content_text);
+                subJson.is_cheat = !!meta.isCheat;
+                selectedSubmissions.push(subJson);
+            }
+        }
+
+        // 4. Tính phổ điểm (Score Distribution) theo % của max_score
         const maxScore = parseFloat(assessment.max_score) || 100;
         const buckets = [
             { label: '0-10%', min: 0, max: maxScore * 0.1, count: 0 },
@@ -1176,8 +1302,8 @@ export const teacherService = {
         let totalScore = 0;
         let gradedCount = 0;
 
-        const processedSubmissions = submissions.map(sub => {
-            const subJson = sub.toJSON();
+        const processedSubmissions = selectedSubmissions.map(sub => {
+            const subJson = (typeof sub.toJSON === 'function') ? sub.toJSON() : sub;
             const score = subJson.grade?.final_score != null
                 ? parseFloat(subJson.grade.final_score)
                 : null;
@@ -1221,12 +1347,14 @@ export const teacherService = {
                 status: assessment.status
             },
             summary: {
-                total_attempts: submissions.length,
+                total_attempts: allSubmissions.length,
+                unique_students: studentMap.size,
                 graded_count: gradedCount,
                 average_score: averageScore
             },
             score_distribution: buckets,
-            attempts: processedSubmissions
+            attempts: processedSubmissions,
+            grade_method: gradeMethod
         };
     },
 

@@ -125,14 +125,21 @@ function ensureQuizAvailable(quiz, settings) {
     if (quiz.status === "draft") throw new ConflictError("Quiz chưa được phát hành");
     if (quiz.status === "closed") throw new ConflictError("Quiz đã đóng");
 
-    const openAt = settings.openAt ? new Date(settings.openAt) : null;
-    const closeAt = settings.closeAt ? new Date(settings.closeAt) : (quiz.due_at ? new Date(quiz.due_at) : null);
+    const openAt = settings.openAt ? new Date(settings.openAt) : (quiz.allow_from ? new Date(quiz.allow_from) : null);
+    
+    // Deadline logic: cutoff_at is the hard limit (closing time). If not set, use due_at.
+    const closeAt = settings.closeAt 
+        ? new Date(settings.closeAt) 
+        : (quiz.cutoff_at 
+            ? new Date(quiz.cutoff_at) 
+            : (quiz.due_at ? new Date(quiz.due_at) : null)
+          );
 
     if (openAt && now < openAt) throw new ConflictError("Quiz chưa mở");
     if (closeAt && now > closeAt) throw new ConflictError("Quiz đã hết hạn");
 }
 
-async function autoGradeAndFinalize({ submission, quiz, settings, transaction }) {
+async function autoGradeAndFinalize({ submission, quiz, settings, transaction, cheatDetected = false }) {
     const answers = await SubmissionAnswer.findAll({
         where: { submission_id: submission.id },
         transaction,
@@ -194,15 +201,25 @@ async function autoGradeAndFinalize({ submission, quiz, settings, transaction })
         }
     }
 
-    // Update submission
+    // 3. Update submission
+    const meta = parseAttemptMeta(submission.content_text) || {};
+    if (cheatDetected) {
+        meta.isCheat = true;
+    }
+
     await submission.update(
-        { status: "graded", submitted_at: new Date() },
+        { 
+            status: "graded", 
+            submitted_at: new Date(),
+            content_text: JSON.stringify(meta, null, 2)
+        },
         { transaction },
     );
 
     // Publish policy
     const reviewOption = settings.reviewOption || "after_submit";
-    const isPublished = reviewOption === "after_submit";
+    // If cheating detected, force publish so student sees the result immediately
+    const isPublished = cheatDetected ? true : (reviewOption === "after_submit");
 
     // Upsert grade
     const [grade, created] = await Grade.findOrCreate({
@@ -231,7 +248,7 @@ async function autoGradeAndFinalize({ submission, quiz, settings, transaction })
         );
     }
 
-    const timeTakenSeconds = submission.started_at 
+    const timeTakenSeconds = submission.started_at
         ? Math.floor((new Date().getTime() - new Date(submission.started_at).getTime()) / 1000)
         : null;
 
@@ -275,7 +292,7 @@ export const studentService = {
                             model: ClassSession,
                             as: "sessions",
                             attributes: ["room"],
-                            limit: 1, 
+                            limit: 1,
                         }
                     ],
                 },
@@ -388,7 +405,7 @@ export const studentService = {
             order: [["graded_at", "DESC"]],
             limit: 3
         });
-        
+
         const formattedGrades = recentGrades.map(g => ({
             id: g.id,
             type: "grade",
@@ -525,6 +542,15 @@ export const studentService = {
         // 4. Assessments (published only)
         const assignments = await Assessment.findAll({
             where: { class_id: classId, status: { [Op.ne]: 'draft' } },
+            include: [
+                {
+                    model: Submission,
+                    as: 'submissions',
+                    where: { student_id: studentId },
+                    required: false,
+                    include: [{ model: Grade, as: 'grade', required: false }]
+                }
+            ],
             order: [["due_at", "ASC"]],
         });
 
@@ -548,12 +574,54 @@ export const studentService = {
                 type: m.type,
                 updatedAt: m.created_at.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
             })),
-            assignments: assignments.map(a => ({
-                id: a.id,
-                title: a.title,
-                type: a.type,
-                due: a.due_at ? a.due_at.toLocaleString('en-US') : 'No due date',
-                points: Number(a.max_score) || 100,
+            assignments: await Promise.all(assignments.map(async a => {
+                let gradeScore = null;
+
+                // Count finished submissions (graded or submitted) for this student on this quiz
+                const finishedSubmissions = (a.submissions || []).filter(
+                    s => ['submitted', 'graded'].includes(s.status)
+                );
+                const attemptCount = finishedSubmissions.length;
+                const attemptLimit = a.attempt_limit ?? null; // null = unlimited
+
+                // Get best/latest published grade
+                for (const sub of finishedSubmissions) {
+                    if (sub.grade && sub.grade.is_published) {
+                        const score = Number(sub.grade.final_score);
+                        if (gradeScore === null || score > gradeScore) {
+                            gradeScore = score;
+                        }
+                    }
+                }
+
+                // Auto-close expired assessments in DB (supplement to the cron job)
+                let finalStatus = a.status;
+                const now = new Date();
+                const deadline = a.cutoff_at ? new Date(a.cutoff_at) : (a.due_at ? new Date(a.due_at) : null);
+
+                // Close if deadline passed
+                if (finalStatus === 'published' && deadline && now > deadline) {
+                    finalStatus = 'closed';
+                    a.update({ status: 'closed' }).catch(err =>
+                        console.error(`[AutoClose] Lỗi khi tự động đóng assessment ${a.id}:`, err)
+                    );
+                }
+
+                // Close per-student if attempt limit exhausted (only for QUIZ type)
+                const isAttemptExhausted = attemptLimit !== null && attemptCount >= attemptLimit;
+                const effectiveStatus = (finalStatus === 'published' && isAttemptExhausted) ? 'closed' : finalStatus;
+
+                return {
+                    id: a.id,
+                    title: a.title,
+                    type: a.type,
+                    status: effectiveStatus,
+                    due: a.due_at ? a.due_at.toLocaleString('en-US') : 'No due date',
+                    points: Number(a.max_score) || 100,
+                    studentScore: gradeScore,
+                    attemptCount,
+                    attemptLimit
+                };
             })),
             announcements: announcements.map(a => ({
                 id: a.id,
@@ -611,11 +679,26 @@ export const studentService = {
             throw new Error("Hệ thống đã đóng cổng nộp bài.");
         }
 
-        // 2. TÍNH TOÁN TRẠNG THÁI NỘP BÀI
-        let finalStatus = 'submitted';
-        if (assessment.due_at && now > new Date(assessment.due_at)) {
-            finalStatus = 'submitted_late';
+        // 2. Kiểm tra giới hạn lần nộp (nếu là bài tập mới)
+        let submission = await Submission.findOne({
+            where: { assessment_id: assessmentId, student_id: studentId }
+        });
+
+        if (!submission && assessment.attempt_limit != null) {
+            const count = await Submission.count({
+                where: {
+                    assessment_id: assessmentId,
+                    student_id: studentId,
+                    status: { [Op.ne]: "in_progress" }
+                }
+            });
+            if (count >= assessment.attempt_limit) {
+                throw new Error(`Bạn đã đạt giới hạn ${assessment.attempt_limit} lần nộp cho bài tập này.`);
+            }
         }
+
+        // 3. TÍNH TOÁN TRẠNG THÁI NỘP BÀI
+        const finalStatus = 'submitted';
 
         return await sequelize.transaction(async (t) => {
             let submission = await Submission.findOne({
@@ -630,9 +713,16 @@ export const studentService = {
                     content_text: `Sinh viên đã nộp ${data.files ? data.files.length : 0} file`
                 }, { transaction: t });
             } else {
+                const maxAttempt = await Submission.max("attempt_no", {
+                    where: { assessment_id: assessmentId, student_id: studentId },
+                    transaction: t
+                });
+                const attemptNo = (maxAttempt || 0) + 1;
+
                 submission = await Submission.create({
                     assessment_id: assessmentId,
                     student_id: studentId,
+                    attempt_no: attemptNo,
                     status: finalStatus,
                     submitted_at: now,
                     started_at: now,
@@ -717,11 +807,21 @@ export const studentService = {
 
             // 2) Nếu không có attempt in_progress => check attempt_limit
             if (!attempt) {
+                const maxAttempt = await Submission.max("attempt_no", {
+                    where: {
+                        assessment_id: quizId,
+                        student_id: studentId,
+                    },
+                    transaction: t,
+                });
+                const attemptNo = (maxAttempt || 0) + 1;
+
+                // check attempt_limit separately based on finished count
                 const finishedCount = await Submission.count({
                     where: {
                         assessment_id: quizId,
                         student_id: studentId,
-                        status: ["submitted", "graded"],
+                        status: { [Op.ne]: "in_progress" }
                     },
                     transaction: t,
                 });
@@ -730,7 +830,7 @@ export const studentService = {
                     throw new ConflictError("Bạn đã vượt quá số lần làm bài cho phép");
                 }
 
-                const attemptNo = finishedCount + 1;
+                // attemptNo calculated above
 
                 // Build order (shuffle)
                 const baseQuestionIds = quiz.questions.map((q) => String(q.id));
@@ -983,7 +1083,7 @@ export const studentService = {
     },
 
     // Submit attempt (Finish + Submit all)
-    submitAttempt: async ({ studentId, submissionId }) => {
+    submitAttempt: async ({ studentId, submissionId, cheat_detected = false }) => {
         const attempt = await Submission.findByPk(submissionId);
         if (!attempt) throw new NotFoundError("Attempt not found");
         if (String(attempt.student_id) !== String(studentId)) throw new AppError("Forbidden", 403);
@@ -1004,6 +1104,7 @@ export const studentService = {
                 quiz,
                 settings,
                 transaction: t,
+                cheatDetected: cheat_detected
             });
 
             return result;
