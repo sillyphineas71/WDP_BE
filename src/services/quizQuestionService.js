@@ -7,6 +7,24 @@ import { Class } from "../models/Class.js";
 import { sequelize } from "../models/index.js";
 import { NotFoundError, ValidationError, AppError } from "../errors/AppError.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const pdfParse = require("pdf-parse");
+const mammoth = require("mammoth");
+
+const recalculateQuizPoints = async (quizId, transaction) => {
+    const assessment = await Assessment.findByPk(quizId, { transaction });
+    if (!assessment) return;
+    const maxScore = assessment.max_score || 100;
+    const questionsCount = await QuizQuestion.count({ where: { assessment_id: quizId }, transaction });
+    if (questionsCount === 0) return;
+    
+    const pointsPerQuestion = parseFloat((maxScore / questionsCount).toFixed(2));
+    await QuizQuestion.update(
+        { points: pointsPerQuestion },
+        { where: { assessment_id: quizId }, transaction }
+    );
+};
 
 export const quizQuestionService = {
 
@@ -66,6 +84,8 @@ export const quizQuestionService = {
                 transaction: t,
             });
 
+            await recalculateQuizPoints(quizId, t);
+
             return { ...question.toJSON(), options: options.map(o => o.toJSON()) };
         });
     },
@@ -110,18 +130,40 @@ export const quizQuestionService = {
         await sequelize.transaction(async (t) => {
             await QuizOption.destroy({ where: { question_id: questionId }, transaction: t });
             await question.destroy({ transaction: t });
+            await recalculateQuizPoints(question.assessment_id, t);
         });
 
         return { deleted: true };
     },
 
     // ── UC_TEA_09: AI Generate Questions using Gemini ──
-    generateAIQuestions: async (quizId, prompt) => {
+    generateAIQuestions: async (quizId, prompt, file) => {
         const assessment = await Assessment.findByPk(quizId);
         if (!assessment) throw new NotFoundError("Quiz không tồn tại.");
 
         const apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey) throw new AppError("Chưa cấu hình GEMINI_API_KEY.", 500);
+
+        let extractedText = "";
+        if (file) {
+            try {
+                if (file.mimetype === "application/pdf") {
+                    const pdfData = await pdfParse(file.buffer);
+                    extractedText = pdfData.text;
+                } else if (file.mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+                    const docxData = await mammoth.extractRawText({ buffer: file.buffer });
+                    extractedText = docxData.value;
+                } else if (file.mimetype === "text/plain") {
+                    extractedText = file.buffer.toString("utf-8");
+                } else {
+                    throw new AppError("Định dạng file không hỗ trợ. Chỉ hỗ trợ PDF, DOCX, TXT.", 400);
+                }
+            } catch (err) {
+                console.error("Lỗi đọc file AI:", err);
+                if (err instanceof AppError) throw err;
+                throw new AppError("Không thể đọc nội dung file.", 500);
+            }
+        }
 
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({
@@ -130,7 +172,7 @@ export const quizQuestionService = {
         });
 
         const systemPrompt = `Bạn là một trợ lý giáo dục chuyên soạn đề thi trắc nghiệm.
-Yêu cầu: ${prompt}
+${extractedText ? `DỰA VÀO TÀI LIỆU SAU ĐÂY:\n"""\n${extractedText.substring(0, 80000)}\n"""\n\n` : ""}Yêu cầu: ${prompt}
 Bài thi: "${assessment.title}"
 
 HÃY TRẢ VỀ KẾT QUẢ DƯỚI DẠNG JSON ARRAY, mỗi phần tử gồm:
@@ -144,6 +186,8 @@ HÃY TRẢ VỀ KẾT QUẢ DƯỚI DẠNG JSON ARRAY, mỗi phần tử gồm:
     { "option_text": "<phương án D>", "is_correct": false }
   ]
 }
+
+Lưu ý QUAN TRỌNG VỀ TOÁN HỌC/VẬT LÝ: Nếu nội dung câu hỏi hoặc đáp án có công thức/phương trình Toán học hoặc Vật lý, BẠN PHẢI bọc các phần công thức đó bằng dấu $$...$$ (Ví dụ: $$x^2 + y^2 = z^2$$ hoặc $$f(x) = \\sin(x)$$) để hệ thống render LaTex hiển thị đúng.
 
 CHỈ trả về JSON array, không giải thích thêm.
 Đảm bảo mỗi câu hỏi có đúng 1 đáp án đúng (is_correct = true).
@@ -204,6 +248,7 @@ Số lượng câu hỏi theo yêu cầu, nếu không nêu rõ thì tạo 5 câ
 
                 created.push(question.toJSON());
             }
+            await recalculateQuizPoints(quizId, t);
             return created;
         });
     },

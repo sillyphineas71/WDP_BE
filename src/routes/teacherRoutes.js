@@ -91,27 +91,7 @@ router.post(
   createAssignment,
 );
 
-// -----------------------------------------------------------------
-// UC_TEA_09: Soạn câu hỏi Quiz (Quiz Question CRUD)
-// -----------------------------------------------------------------
-
-// Lấy danh sách câu hỏi của Quiz
-router.get("/quizzes/:assessmentId/questions", isAuth, authorize(USER_ROLES.TEACHER), getQuizQuestions);
-
-// Thêm 1 câu hỏi thủ công
-router.post("/quizzes/:assessmentId/questions", isAuth, authorize(USER_ROLES.TEACHER), addQuizQuestion);
-
-// Thêm nhiều câu hỏi (Lưu vào đề từ AI hoặc batch)
-router.post("/quizzes/:assessmentId/questions/bulk", isAuth, authorize(USER_ROLES.TEACHER), bulkAddQuizQuestions);
-
-// Tạo câu hỏi bằng AI (Review trước khi lưu)
-router.post("/quizzes/:assessmentId/generate-ai", isAuth, authorize(USER_ROLES.TEACHER), generateAiQuiz);
-
-// Cập nhật câu hỏi
-router.put("/quizzes/questions/:questionId", isAuth, authorize(USER_ROLES.TEACHER), updateQuizQuestion);
-
-// Xóa câu hỏi
-router.delete("/quizzes/questions/:questionId", isAuth, authorize(USER_ROLES.TEACHER), deleteQuizQuestion);
+// Routing cũ dành cho Quiz Questions đã bị xóa để nhường chỗ cho quizQuestionController ở block mới bên dưới.
 
 // UC_TEA_15: Công bố điểm (Publish grades)
 router.put(
@@ -229,11 +209,14 @@ router.delete("/materials/:materialId", materialCtrl.deleteMaterial);
 // -----------------------------------------------------------------
 import { quizQuestionController } from "../controllers/quizQuestionController.js";
 
+import multer from "multer";
+const memoryUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
 router.get("/quizzes/:quizId/questions", quizQuestionController.getQuestions);
 router.post("/quizzes/:quizId/questions", quizQuestionController.createQuestion);
 router.put("/quizzes/questions/:questionId", quizQuestionController.updateQuestion);
 router.delete("/quizzes/questions/:questionId", quizQuestionController.deleteQuestion);
-router.post("/quizzes/:quizId/generate-ai", quizQuestionController.generateAIQuestions);
+router.post("/quizzes/:quizId/generate-ai", memoryUpload.single("file"), quizQuestionController.generateAIQuestions);
 router.post("/quizzes/:quizId/questions/bulk", quizQuestionController.bulkSaveQuestions);
 
 export default router;
