@@ -48,12 +48,13 @@ export const quizQuestionController = {
         try {
             const { quizId } = req.params;
             const { prompt } = req.body;
+            const file = req.file;
 
             if (!prompt || !prompt.trim()) {
                 return res.status(400).json({ success: false, message: "Vui lòng nhập yêu cầu cho AI." });
             }
 
-            const data = await quizQuestionService.generateAIQuestions(quizId, prompt);
+            const data = await quizQuestionService.generateAIQuestions(quizId, prompt, file);
             res.status(200).json({ success: true, data });
         } catch (error) {
             next(error);
