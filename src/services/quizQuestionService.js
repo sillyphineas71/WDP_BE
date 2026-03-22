@@ -187,7 +187,7 @@ HÃY TRẢ VỀ KẾT QUẢ DƯỚI DẠNG JSON ARRAY, mỗi phần tử gồm:
   ]
 }
 
-Lưu ý QUAN TRỌNG VỀ TOÁN HỌC/VẬT LÝ: Nếu nội dung câu hỏi hoặc đáp án có công thức/phương trình Toán học hoặc Vật lý, BẠN PHẢI bọc các phần công thức đó bằng dấu $$...$$ (Ví dụ: $$x^2 + y^2 = z^2$$ hoặc $$f(x) = \\sin(x)$$) để hệ thống render LaTex hiển thị đúng.
+Lưu ý QUAN TRỌNG VỀ TOÁN HỌC/VẬT LÝ: Nếu nội dung câu hỏi hoặc đáp án có công thức/phương trình Toán học hoặc Vật lý, BẠN PHẢI bọc các phần công thức đó bằng dấu $...$ (Ví dụ: $x^2 + y^2 = z^2$ hoặc $f(x) = \\sin(x)$) để hệ thống render LaTex hiển thị đúng trên cùng một dòng.
 
 CHỈ trả về JSON array, không giải thích thêm.
 Đảm bảo mỗi câu hỏi có đúng 1 đáp án đúng (is_correct = true).
