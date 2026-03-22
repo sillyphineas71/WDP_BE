@@ -10,8 +10,12 @@ export const createEssaySchema = Joi.object({
   
   // Thời gian
   allow_from: Joi.date().iso().allow(null),
-  due_at: Joi.date().iso().allow(null),
-  cutoff_at: Joi.date().iso().allow(null),
+  due_at: Joi.date().iso().greater(Joi.ref('allow_from')).allow(null).messages({
+    'date.greater': 'Hạn nộp (due_at) phải sau Thời gian mở cổng nộp (allow_from).'
+  }),
+  cutoff_at: Joi.date().iso().greater(Joi.ref('due_at')).allow(null).messages({
+    'date.greater': 'Thời gian đóng cổng (cutoff_at) phải sau Hạn nộp (due_at).'
+  }),
   
   // Thang điểm (Mặc định 100)
   max_score: Joi.number().min(0).default(100),

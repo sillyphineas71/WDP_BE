@@ -83,3 +83,34 @@ export const loginUser = async (userData) => {
     },
   };
 };
+
+export const loginWithGoogle = async (email) => {
+  const user = await User.findOne({
+    where: { email },
+    include: [
+      {
+        model: Role,
+        as: "role",
+        attributes: ["id", "code", "name"],
+      },
+    ],
+  });
+
+  if (!user) {
+    throw new UnauthorizedError("Tài khoản chưa được đăng ký trong hệ thống.");
+  }
+
+  if (user.status === "blocked") {
+    throw new UnauthorizedError(ERROR_MESSAGES.USER_BLOCKED);
+  }
+
+  const token = generateToken(user, user.role);
+
+  return {
+    token,
+    user: {
+      ...formatUserResponse(user),
+      role: user.role.code, 
+    },
+  };
+};

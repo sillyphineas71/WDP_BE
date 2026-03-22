@@ -1,4 +1,5 @@
-import { loginUser } from "../services/authService.js";
+import { loginUser, loginWithGoogle } from "../services/authService.js";
+import axios from "axios";
 import { validateLogin } from "../validators/authValidator.js";
 import { SUCCESS_MESSAGES } from "../constants/messages.js";
 
@@ -50,6 +51,42 @@ export const login = async (req, res, next) => {
       },
     });
   } catch (error) {
+    next(error);
+  }
+};
+
+export const googleLogin = async (req, res, next) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      return res.status(400).json({ success: false, message: "Thiếu Google Token", statusCode: 400 });
+    }
+    
+    // Verify token with Google
+    const response = await axios.get(`https://www.googleapis.com/oauth2/v3/userinfo`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const { email } = response.data;
+    
+    if (!email) {
+      return res.status(400).json({ success: false, message: "Không lấy được email từ Google", statusCode: 400 });
+    }
+
+    const result = await loginWithGoogle(email);
+
+    return res.status(200).json({
+      success: true,
+      message: SUCCESS_MESSAGES.LOGIN_SUCCESS,
+      statusCode: 200,
+      data: {
+        token: result.token,
+        user: result.user,
+      },
+    });
+  } catch (error) {
+    if (error.response && (error.response.status === 400 || error.response.status === 401)) {
+      return res.status(400).json({ success: false, message: "Google Token không hợp lệ", statusCode: 400 });
+    }
     next(error);
   }
 };
