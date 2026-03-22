@@ -12,6 +12,7 @@ import studentRoutes from "./src/routes/studentRoutes.js";
 import uploadRoutes from "./src/routes/uploadRoutes.js";
 import notificationRoutes from "./src/routes/notificationRoutes.js";
 import classStreamRoutes from "./src/routes/classStreamRoutes.js";
+import aiRoutes from "./src/routes/aiRoutes.js";
 import { errorHandler } from "./src/middleware/errorHandler.js";
 import { closeRedisConnection, isRedisConfigured } from "./src/config/redis.js";
 import { isMailerConfigured } from "./src/config/mailer.js";
@@ -76,6 +77,7 @@ app.use("/api/teacher", teacherRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api", classStreamRoutes);
+app.use("/api/ai", aiRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({

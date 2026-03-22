@@ -11,6 +11,7 @@ import {
   getAssignmentsByClass,
   updateEssayAssessment,
   deleteAssessment,
+  getStudentsByClass,
   getSubmissionsByAssessment,
   getSubmissionForGrading,
   gradeSubmission,
@@ -132,6 +133,7 @@ router.delete("/classes/:classId/assessments/:assessmentId", isAuth, authorize(U
 
 // Route lấy danh sách bài nộp của một bài tập cụ thể
 router.get("/assessments/:assessmentId/submissions", isAuth, authorize(USER_ROLES.TEACHER), getSubmissionsByAssessment);
+router.get("/classes/:classId/students", isAuth, authorize(USER_ROLES.TEACHER), getStudentsByClass);
 
 // Grading routes
 router.get('/submissions/:submissionId/grading', isAuth, authorize(USER_ROLES.TEACHER), getSubmissionForGrading);

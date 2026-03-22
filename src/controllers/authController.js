@@ -1,4 +1,4 @@
-import { loginUser, loginWithGoogle } from "../services/authService.js";
+import { loginUser, loginWithGoogle, forgotPassword, verifyOtpAndResetPassword } from "../services/authService.js";
 import axios from "axios";
 import { validateLogin } from "../validators/authValidator.js";
 import { SUCCESS_MESSAGES } from "../constants/messages.js";
@@ -88,5 +88,34 @@ export const googleLogin = async (req, res, next) => {
       return res.status(400).json({ success: false, message: "Google Token không hợp lệ", statusCode: 400 });
     }
     next(error);
+  }
+};
+
+export const forgotPasswordController = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, message: "Email là bắt buộc" });
+
+    const result = await forgotPassword(email);
+    return res.status(200).json(result);
+  } catch (error) {
+    res.status(error.message.includes("không tồn tại") ? 404 : 400).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+export const resetPasswordController = async (req, res, next) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ success: false, message: "Thiếu thông tin xác thực" });
+    }
+
+    const result = await verifyOtpAndResetPassword({ email, otp, newPassword });
+    return res.status(200).json(result);
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
   }
 };

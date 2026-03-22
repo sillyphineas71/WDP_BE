@@ -12,7 +12,8 @@ import {
     getSummary,
     submitAttempt,
     getClassGradebook,
-    getGradesOverview
+    getGradesOverview,
+    getQuizAttemptDetail
 } from "../controllers/studentController.js";
 import { isAuth, authorize } from "../middleware/isAuth.js";
 import { USER_ROLES } from "../constants/roles.js";
@@ -74,6 +75,14 @@ router.get(
     isAuth,
     authorize(USER_ROLES.STUDENT),
     getSummary,
+);
+
+// Review quiz attempt details
+router.get(
+    "/attempts/:submissionId/review",
+    isAuth,
+    authorize(USER_ROLES.STUDENT),
+    getQuizAttemptDetail,
 );
 
 // Submit and finish the attempt

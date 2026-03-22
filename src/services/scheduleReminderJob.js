@@ -98,7 +98,7 @@ const processUpcomingSessions = async () => {
             id: teacher.id,
             email: teacher.email,
             full_name: teacher.full_name,
-            role: "Giảng viên",
+            role: "Giáo viên",
           },
         ];
 
@@ -123,7 +123,7 @@ const processUpcomingSessions = async () => {
             id: enrollment.student.id,
             email: enrollment.student.email,
             full_name: enrollment.student.full_name,
-            role: "Học viên",
+            role: "Học sinh",
           });
         });
 

@@ -19,8 +19,8 @@ import {
 
 const ROLE_LABELS = {
   ADMIN: "Quản trị viên",
-  TEACHER: "Giảng viên",
-  STUDENT: "Học viên",
+  TEACHER: "Giáo viên",
+  STUDENT: "Học sinh",
 };
 
 const POST_TYPE_LABELS = {
@@ -300,7 +300,7 @@ const assertTeacherPermission = (context, actionLabel) => {
   if (context.isTeacher) return;
 
   throw httpError(
-    `Chỉ giảng viên phụ trách lớp mới có thể ${actionLabel}.`,
+    `Chỉ giáo viên phụ trách lớp mới có thể ${actionLabel}.`,
     403,
     "STREAM_TEACHER_ONLY",
   );

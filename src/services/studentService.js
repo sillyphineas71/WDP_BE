@@ -347,6 +347,7 @@ export const studentService = {
             title: a.title,
             type: a.type,
             className: a.class?.name || "N/A",
+            classId: a.class_id,
             dueAt: a.due_at,
             dueFormatted: a.due_at ? new Date(a.due_at).toLocaleDateString('vi-VN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'No due date',
             isUrgent: a.due_at ? (new Date(a.due_at) - new Date() < 24 * 60 * 60 * 1000) : false
@@ -611,16 +612,30 @@ export const studentService = {
                 const isAttemptExhausted = attemptLimit !== null && attemptCount >= attemptLimit;
                 const effectiveStatus = (finalStatus === 'published' && isAttemptExhausted) ? 'closed' : finalStatus;
 
+                const latestSub = finishedSubmissions.sort((x, y) => new Date(y.submitted_at) - new Date(x.submitted_at))[0];
+                let subStatus = 'unsubmitted';
+                let gradeStatus = 'none';
+
+                if (latestSub) {
+                    const subTime = new Date(latestSub.submitted_at);
+                    const dueTime = a.due_at ? new Date(a.due_at) : null;
+                    subStatus = (dueTime && subTime > dueTime) ? 'late' : 'submitted';
+                    gradeStatus = latestSub.status === 'graded' ? 'graded' : 'ungraded';
+                }
+
                 return {
                     id: a.id,
                     title: a.title,
                     type: a.type,
                     status: effectiveStatus,
                     due: a.due_at ? a.due_at.toLocaleString('en-US') : 'No due date',
+                    cutoff: a.cutoff_at ? a.cutoff_at.toLocaleString('en-US') : 'No cutoff',
                     points: Number(a.max_score) || 100,
                     studentScore: gradeScore,
                     attemptCount,
-                    attemptLimit
+                    attemptLimit,
+                    submissionStatus: subStatus,
+                    gradingStatus: gradeStatus
                 };
             })),
             announcements: announcements.map(a => ({
@@ -1371,6 +1386,115 @@ export const studentService = {
         }
 
         return results;
+    },
+
+    getQuizAttemptDetail: async (studentId, submissionId) => {
+        const submission = await Submission.findByPk(submissionId, {
+            include: [
+                {
+                    model: User,
+                    as: 'student',
+                    attributes: ['id', 'full_name', 'email', 'avatar_url']
+                },
+                {
+                    model: Assessment,
+                    as: 'assessment',
+                    include: [{
+                        model: Class,
+                        as: 'class'
+                    }]
+                },
+                {
+                    model: Grade,
+                    as: 'grade'
+                },
+                {
+                    model: SubmissionAnswer,
+                    as: 'answers',
+                    include: [
+                        {
+                            model: QuizQuestion,
+                            as: 'question',
+                            include: [{
+                                model: QuizOption,
+                                as: 'options',
+                                attributes: ['id', 'option_text', 'is_correct', 'display_order']
+                            }]
+                        },
+                        {
+                            model: QuizOption,
+                            as: 'selectedOption',
+                            attributes: ['id', 'option_text', 'is_correct']
+                        }
+                    ]
+                }
+            ]
+        });
+
+        if (!submission) {
+            throw new NotFoundError("Không tìm thấy lượt làm bài.");
+        }
+
+        if (submission.assessment.type !== 'QUIZ') {
+            throw new AppError("Bài này không phải là Quiz.", 400);
+        }
+
+        if (String(submission.student_id) !== String(studentId)) {
+            throw new AppError("Forbidden: Bạn không thể xem bài làm của người khác.", 403);
+        }
+
+        let durationMinutes = null;
+        if (submission.started_at && submission.submitted_at) {
+            durationMinutes = Math.round(
+                (new Date(submission.submitted_at) - new Date(submission.started_at)) / 60000
+            );
+        }
+
+        const sortedAnswers = submission.answers
+            .map(a => a.toJSON())
+            .sort((a, b) => (a.question?.display_order || 0) - (b.question?.display_order || 0));
+
+        const questions = sortedAnswers.map(answer => ({
+            question_id: answer.question_id,
+            question_text: answer.question?.question_text,
+            display_order: answer.question?.display_order,
+            max_points: answer.question ? parseFloat(answer.question.points) : null,
+            options: answer.question?.options?.map(opt => ({
+                id: opt.id,
+                option_text: opt.option_text,
+                is_correct: opt.is_correct,
+                is_selected: opt.id === answer.selected_option_id
+            })) || [],
+            selected_option_id: answer.selected_option_id,
+            selected_option_text: answer.selectedOption?.option_text || null,
+            is_correct: answer.is_correct,
+            score: answer.score != null ? parseFloat(answer.score) : null,
+            answer_id: answer.id
+        }));
+
+        return {
+            submission: {
+                id: submission.id,
+                attempt_no: submission.attempt_no,
+                status: submission.status,
+                started_at: submission.started_at,
+                submitted_at: submission.submitted_at,
+                duration_minutes: durationMinutes
+            },
+            student: submission.student,
+            quiz: {
+                id: submission.assessment.id,
+                title: submission.assessment.title,
+                max_score: parseFloat(submission.assessment.max_score),
+                time_limit_minutes: submission.assessment.time_limit_minutes
+            },
+            grade: submission.grade ? {
+                final_score: parseFloat(submission.grade.final_score),
+                is_published: submission.grade.is_published,
+                graded_at: submission.grade.graded_at
+            } : null,
+            questions
+        };
     }
 };
 

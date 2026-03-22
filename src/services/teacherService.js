@@ -219,6 +219,7 @@ export const teacherService = {
         return quizzes.map(q => ({
             id: q.id,
             title: q.title,
+            max_score: q.max_score,
             status: q.status,
             dueAt: q.due_at,
             timeLimit: q.time_limit_minutes,
@@ -540,7 +541,7 @@ export const teacherService = {
                     user_id: studentId,
                     channel: 'in_app',
                     title: 'Điểm đã được công bố',
-                    body: `Điểm bài "${assessment.title}" đã được giảng viên công bố. Vào trang điểm để xem kết quả.`,
+                    body: `Điểm bài "${assessment.title}" đã được giáo viên công bố. Vào trang điểm để xem kết quả.`,
                     ref_type: 'GRADE',
                     ref_id: assessmentId,
                     status: 'sent',
@@ -625,7 +626,10 @@ export const teacherService = {
     },
 
     getAssignmentsByClass: async (teacherId, classId) => {
-        const cls = await Class.findOne({ where: { id: classId, teacher_id: teacherId } });
+        const cls = await Class.findOne({ 
+            where: { id: classId, teacher_id: teacherId },
+            include: [{ model: Course, as: "course", attributes: ["name"] }]
+        });
         if (!cls) {
             throw new NotFoundError("Lớp học không tồn tại hoặc bạn không quản lý lớp này.");
         }
@@ -661,7 +665,10 @@ export const teacherService = {
             console.log(`[AutoClose] Đã tự động đóng ${autoClosePromises.length} bài tập quá hạn trong lớp ${classId}.`);
         }
 
-        return assessments;
+        return {
+            assessments: assessments,
+            class: cls
+        };
     },
 
 
@@ -763,32 +770,90 @@ export const teacherService = {
             throw new NotFoundError("Không tìm thấy bài tập.");
         }
 
+        // Lấy toàn bộ học sinh trong lớp
+        const enrollments = await Enrollment.findAll({
+            where: { class_id: assessment.class_id },
+            include: [
+                { model: User, as: 'student', attributes: ['id', 'full_name', 'email', 'avatar_url'] }
+            ]
+        });
+
         const submissions = await Submission.findAll({
             where: { assessment_id: assessmentId },
             include: [
-                { model: User, as: 'student', attributes: ['id', 'full_name', 'email', 'avatar_url'] },
                 { model: Grade, as: 'grade', attributes: ['final_score', 'is_published'] }
             ],
             order: [['submitted_at', 'DESC']]
         });
 
-        const processedSubmissions = submissions.map(sub => {
-            const subJson = sub.toJSON();
-            let isCheat = false;
-            try {
-                if (subJson.content_text) {
-                    const meta = JSON.parse(subJson.content_text);
-                    isCheat = !!meta.isCheat;
-                }
-            } catch (e) {}
-            subJson.is_cheat = isCheat;
-            return subJson;
+        const processedSubmissions = enrollments.map(e => {
+            const sub = submissions.find(s => s.student_id === e.user_id);
+            if (sub) {
+                const subJson = sub.toJSON();
+                let isCheat = false;
+                try {
+                    if (subJson.content_text) {
+                        const meta = JSON.parse(subJson.content_text);
+                        isCheat = !!meta.isCheat;
+                    }
+                } catch (err) {}
+                subJson.is_cheat = isCheat;
+                return { ...subJson, student: e.student ? e.student.toJSON() : null };
+            } else {
+                return {
+                    id: `unsub-${e.student_id}`,
+                    student_id: e.student_id,
+                    assessment_id: assessmentId,
+                    status: 'unsubmitted',
+                    submitted_at: null,
+                    student: e.student ? e.student.toJSON() : null,
+                    grade: null
+                };
+            }
         });
+
+        processedSubmissions.sort((a, b) => {
+            const aSubmitted = a.status !== 'unsubmitted';
+            const bSubmitted = b.status !== 'unsubmitted';
+
+            if (aSubmitted && !bSubmitted) return -1;
+            if (!aSubmitted && bSubmitted) return 1;
+
+            if (aSubmitted && bSubmitted) {
+                return new Date(a.submitted_at) - new Date(b.submitted_at);
+            }
+            return 0;
+        });
+
+        const studentCount = await Enrollment.count({ where: { class_id: assessment.class_id } });
 
         return {
             assessment: assessment,
-            submissions: processedSubmissions
+            submissions: processedSubmissions,
+            studentCount: studentCount
         };
+    },
+
+    getStudentsByClass: async (teacherId, classId) => {
+        const cls = await Class.findByPk(classId);
+        if (!cls || cls.teacher_id !== teacherId) {
+            throw new NotFoundError("Không tìm thấy lớp học.");
+        }
+
+        const enrollments = await Enrollment.findAll({
+            where: { class_id: classId },
+            include: [
+                { model: User, as: 'student', attributes: ['id', 'full_name', 'email', 'avatar_url'] }
+            ]
+        });
+
+        return enrollments.map(e => ({
+            id: e.id,
+            user_id: e.user_id,
+            status: e.status,
+            enrolled_date: e.enrolled_date,
+            student: e.student ? e.student.toJSON() : null
+        }));
     },
 
     // ==========================================
@@ -904,7 +969,7 @@ export const teacherService = {
         // 3. Chuẩn bị mảng dữ liệu gửi cho Gemini
         let requestData = [];
 
-        requestData.push(`Bạn là một giảng viên đại học khách quan và công tâm đang chấm bài tập.
+        requestData.push(`Bạn là một giáo viên đại học khách quan và công tâm đang chấm bài tập.
     - Tiêu đề bài tập: "${submission.assessment.title}"
     - Hướng dẫn cơ bản: "${submission.assessment.instructions || 'Không có yêu cầu thêm'}"
     - Thang điểm tối đa: ${submission.assessment.max_score}
@@ -990,7 +1055,7 @@ export const teacherService = {
         const startOfToday = new Date(now.setHours(0, 0, 0, 0));
         const endOfToday = new Date(now.setHours(23, 59, 59, 999));
 
-        // 1. Lọc Lớp học của giảng viên phụ trách
+        // 1. Lọc Lớp học của giáo viên phụ trách
         const classes = await Class.findAll({
             where: { teacher_id: teacherId },
             include: [
@@ -1022,7 +1087,7 @@ export const teacherService = {
                 {
                     model: Assessment, as: "assessment",
                     where: { class_id: { [Op.in]: classIds } },
-                    attributes: ["id", "title", "due_at"],
+                    attributes: ["id", "title", "due_at", "class_id", "type"],
                     include: [{ model: Class, as: "class", attributes: ["name"] }]
                 },
                 {
@@ -1041,9 +1106,11 @@ export const teacherService = {
             if (!toGradingStats[assId]) {
                 toGradingStats[assId] = {
                     assessmentId: assId,
+                    classId: sub.assessment.class_id,
                     title: sub.assessment.title,
                     className: sub.assessment.class?.name,
                     dueAt: sub.assessment.due_at,
+                    type: sub.assessment.type,
                     count: 0
                 };
             }
@@ -1082,7 +1149,7 @@ export const teacherService = {
                 {
                     model: Assessment, as: "assessment",
                     where: { class_id: { [Op.in]: classIds } },
-                    attributes: ["id", "title", "due_at"]
+                    attributes: ["id", "title", "due_at", "class_id", "type"]
                 },
                 {
                     model: User,
@@ -1104,7 +1171,9 @@ export const teacherService = {
                 timestamp: sub.submitted_at,
                 isLate: isLate,
                 message: `${sub.student?.full_name} đã nộp bài "${sub.assessment?.title || "không rõ"}"` + (isLate ? " (Muộn)" : ""),
-                link: `/teacher/assessments/${sub.assessment?.id}/submissions`
+                link: sub.assessment?.type?.toUpperCase() === 'QUIZ' 
+                    ? `/teacher/classes/${sub.assessment?.class_id}/assessments/${sub.assessment?.id}/quiz-attempts` 
+                    : `/teacher/classes/${sub.assessment?.class_id}/assessments/${sub.assessment?.id}/submissions`
             };
         });
 
@@ -1132,7 +1201,12 @@ export const teacherService = {
             const assessments = await Assessment.findAll({
                 where: { class_id: { [Op.in]: classIds } },
                 include: [
-                    { model: Class, as: "class", attributes: ["name"] },
+                    { 
+                        model: Class, 
+                        as: "class", 
+                        attributes: ["name"],
+                        include: [{ model: Course, as: "course", attributes: ["name"] }]
+                    },
                     {
                         model: Submission,
                         as: "submissions",
@@ -1159,7 +1233,8 @@ export const teacherService = {
                     id: a.id,
                     title: a.title,
                     type: a.type, // QUIZ hoặc ASSIGNMENT
-                    className: a.class?.name,
+                    className: a.class?.course?.name ? `${a.class.course.name} (${a.class.name})` : a.class?.name,
+                    classId: a.class_id,
                     dueAt: a.due_at,
                     needsGradingCount,
                     gradedCount
@@ -1177,7 +1252,7 @@ export const teacherService = {
      * + Biểu đồ phổ điểm (Score Distribution)
      */
     getQuizAttempts: async (teacherId, assessmentId) => {
-        // 1. Kiểm tra quiz tồn tại và thuộc quyền giảng viên
+        // 1. Kiểm tra quiz tồn tại và thuộc quyền giáo viên
         const assessment = await Assessment.findByPk(assessmentId, {
             include: [{
                 model: Class,
@@ -2008,12 +2083,12 @@ generateAiQuizQuestions: async (teacherId, assessmentId, payload) => {
 
     let requestData = [];
 
-    requestData.push(`Bạn là một trợ lý giảng viên chuyên soạn đề kiểm tra. 
+    requestData.push(`Bạn là một trợ lý giáo viên chuyên soạn đề kiểm tra. 
 Nhiệm vụ: Dựa trên tài liệu và yêu cầu dưới đây, hãy tạo bộ câu hỏi trắc nghiệm (Multiple Choice).
 
 YÊU CẦU:
 - Số lượng: ${payload.num_questions || 10} câu.
-- Prompt từ giảng viên: "${payload.prompt}"
+- Prompt từ giáo viên: "${payload.prompt}"
 - Môn học/Tiêu đề: "${assessment.title}"
 
 ĐỊNH DẠNG TRẢ VỀ (JSON):

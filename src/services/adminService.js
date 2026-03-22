@@ -375,7 +375,7 @@ export const adminService = {
         return { successCount, failures };
     },
 
-    // --- UC_ADM_12: PHÂN CÔNG GIẢNG VIÊN ---
+    // --- UC_ADM_12: PHÂN CÔNG GIÁO VIÊN ---
     assignTeacher: async (classId, teacherId) => {
         const cls = await Class.findByPk(classId, {
             include: [{ model: ClassSession, as: "sessions" }]
@@ -391,12 +391,12 @@ export const adminService = {
         // Verify teacher exists and is active
         const teacher = await User.findByPk(teacherId);
         if (!teacher || teacher.status !== "active") {
-            throw new ConflictError("Giảng viên không tồn tại hoặc không ở trạng thái Active");
+            throw new ConflictError("Giáo viên không tồn tại hoặc không ở trạng thái Active");
         }
 
         // E2: Lớp học chưa có lịch
         if (!cls.sessions || cls.sessions.length === 0) {
-            throw new ConflictError("Vui lòng cấu hình lịch học (Ca/Thứ) cho lớp này trước khi phân công Giảng viên.");
+            throw new ConflictError("Vui lòng cấu hình lịch học (Ca/Thứ) cho lớp này trước khi phân công Giáo viên.");
         }
 
         // E1: Xung đột lịch (BR_SCHED_01)
@@ -421,7 +421,7 @@ export const adminService = {
 
                     // Check for overlap: max(start1, start2) < min(end1, end2)
                     if (Math.max(tStart, eStart) < Math.min(tEnd, eEnd)) {
-                        throw new ConflictError(`Không thể phân công. Giảng viên ${teacher.full_name} bị trùng lịch với lớp ${tClass.name}. Vui lòng chọn Giảng viên khác.`);
+                        throw new ConflictError(`Không thể phân công. Giáo viên ${teacher.full_name} bị trùng lịch với lớp ${tClass.name}. Vui lòng chọn Giáo viên khác.`);
                     }
                 }
             }
@@ -563,7 +563,7 @@ export const adminService = {
 
     enrollStudents: async (classId, studentIds) => {
         if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
-            throw new ConflictError("Vui lòng chọn ít nhất 1 học viên để thêm vào lớp");
+            throw new ConflictError("Vui lòng chọn ít nhất 1 học sinh để thêm vào lớp");
         }
 
         const cls = await Class.findByPk(classId);
@@ -579,7 +579,7 @@ export const adminService = {
         });
 
         if (validStudents.length !== studentIds.length) {
-            throw new ConflictError("Một số học viên được chọn không hợp lệ hoặc không phải là học sinh kích hoạt.");
+            throw new ConflictError("Một số học sinh được chọn không hợp lệ hoặc không phải là học sinh kích hoạt.");
         }
 
         // Check if any students are already enrolled
@@ -594,7 +594,7 @@ export const adminService = {
         const newStudentIds = studentIds.filter(id => !existingIds.includes(id));
 
         if (newStudentIds.length === 0) {
-            throw new ConflictError("Tất cả học viên được chọn đã có trong lớp này rồi.");
+            throw new ConflictError("Tất cả học sinh được chọn đã có trong lớp này rồi.");
         }
 
         const currentEnrollmentCount = await Enrollment.count({ where: { class_id: classId } });
@@ -786,7 +786,7 @@ export const adminService = {
         });
 
         if (!enrollment) {
-            throw new NotFoundError("Học viên này chưa được tham gia vào lớp học");
+            throw new NotFoundError("Học sinh này chưa được tham gia vào lớp học");
         }
 
         // Hard delete for simple unenrollment, or you can update status to 'dropped' based on requirements
@@ -1271,7 +1271,7 @@ export const adminService = {
             const topicStr = row.topic?.trim() || "Buổi học";
 
             if (!cName) errors.push("Thiếu Tên lớp");
-            if (!tEmail) errors.push("Thiếu Email Giảng viên");
+            if (!tEmail) errors.push("Thiếu Email Giáo viên");
             if (!dateStr) errors.push("Thiếu Ngày học");
             if (!startStr) errors.push("Thiếu Giờ bắt đầu");
             if (!endStr) errors.push("Thiếu Giờ kết thúc");
@@ -1285,7 +1285,7 @@ export const adminService = {
             const teacher = teacherMap[tEmail.toLowerCase()];
 
             if (!cls) errors.push(`Lớp '${cName}' không tồn tại hoặc không hoạt động`);
-            if (!teacher) errors.push(`Giảng viên '${tEmail}' không tồn tại hoặc không hoạt động`);
+            if (!teacher) errors.push(`Giáo viên '${tEmail}' không tồn tại hoặc không hoạt động`);
 
             if (errors.length > 0) {
                 invalidRows.push({ ...row, rowNum, error: errors.join(", ") });
@@ -1340,7 +1340,7 @@ export const adminService = {
                     }
                     if (teacher.id === s.teacher_id) {
                         isOverlap = true;
-                        overlapReason = `Giảng viên ${tEmail} bị trùng lịch dạy`;
+                        overlapReason = `Giáo viên ${tEmail} bị trùng lịch dạy`;
                         break;
                     }
                 }
