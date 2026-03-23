@@ -154,19 +154,22 @@ export const adminService = {
 
     // --- UC_ADM_11: QUẢN LÝ LỚP HỌC ---
     getAllClasses: async () => {
-        return await Class.findAll({
+        const classes = await Class.findAll({
             include: [
                 { model: Course, as: "course", attributes: ["name", "code"] },
                 { model: User, as: "teacher", attributes: ["full_name"] },
-                {
-                    model: Enrollment,
-                    as: "enrollments",
-                    attributes: ["id"]
-                }
+                { model: Enrollment, as: "enrollments", attributes: ["id"] }
             ],
-            // BỎ trường is_deleted ở đây vì Model hiện tại của bạn không có
             order: [["created_at", "DESC"]]
         });
+
+        const today = new Date();
+        classes.forEach(c => {
+             if (c.end_date && new Date(c.end_date) < today && ["active", "upcoming"].includes(c.status)) {
+                 c.status = "closed"; // Override on the fly
+             }
+        });
+        return classes;
     },
 
     getClassDetail: async (id) => {
@@ -176,18 +179,23 @@ export const adminService = {
                 { model: User, as: "teacher", attributes: ["id", "full_name", "email"] },
                 {
                     model: Enrollment, as: "enrollments",
-                    // Sử dụng alias 'student' để khớp với định nghĩa quan hệ
                     include: [{ model: User, as: "student", attributes: ["full_name", "email"] }]
                 },
                 {
                     model: ClassSession,
                     as: "sessions",
                     where: { status: { [Sequelize.Op.ne]: "cancelled" } },
-                    required: false // LEFT OUTER JOIN để lấy class ngay cả khi không có session nào active
+                    required: false 
                 }
             ],
         });
         if (!cls) throw new NotFoundError("Lớp học không tồn tại");
+
+        const today = new Date();
+        if (cls.end_date && new Date(cls.end_date) < today && ["active", "upcoming"].includes(cls.status)) {
+             cls.status = "closed";
+        }
+
         return cls;
     },
 
@@ -275,6 +283,29 @@ export const adminService = {
             if (isNaN(start) || isNaN(end) || end <= start) {
                 invalidRows.push({ ...row, rowNumber: i + 1, reason: "Ngày kết thúc phải lớn hơn ngày bắt đầu và đúng định dạng." });
                 continue;
+            }
+
+            // Past Date check
+            const todayNoon = new Date();
+            todayNoon.setHours(0, 0, 0, 0);
+            if (start < todayNoon) {
+                invalidRows.push({ ...row, rowNumber: i + 1, reason: "Ngày bắt đầu không thể ở quá khứ." });
+                continue;
+            }
+
+            // Academic Year Validation
+            const yearMatch = String(semester || "").match(/(\d{4})-(\d{4})/);
+            if (yearMatch) {
+                const startYear = parseInt(yearMatch[1]);
+                const endYear = parseInt(yearMatch[2]);
+                if (start.getFullYear() < startYear) {
+                    invalidRows.push({ ...row, rowNumber: i + 1, reason: `Ngày bắt đầu (${start.getFullYear()}) phải từ năm ${startYear} trở đi.` });
+                    continue;
+                }
+                if (end.getFullYear() > endYear) {
+                    invalidRows.push({ ...row, rowNumber: i + 1, reason: `Ngày kết thúc (${end.getFullYear()}) phải muộn nhất năm ${endYear}.` });
+                    continue;
+                }
             }
 
             // Check Course exists (Case-insensitive)
@@ -517,7 +548,6 @@ export const adminService = {
             throw new ConflictError("Vui lòng cung cấp danh sách buổi học cần sửa");
         }
 
-        // Pre-check to avoid "Delete then Fail" scenario (Conflict 409)
         const cls = await Class.findByPk(classId);
         if (!cls) throw new NotFoundError("Lớp học không tồn tại");
 
@@ -544,6 +574,20 @@ export const adminService = {
 
         // Regenerate completely new sessions for the updated schedule
         return await adminService.addSession(classId, { day_of_week, start_time, end_time, room, teacher_id });
+    },
+
+    updateSession: async (classId, sessionId, data) => {
+        const { start_time, end_time, room, teacher_id } = data;
+        const session = await ClassSession.findByPk(sessionId);
+        if (!session) throw new NotFoundError("Buổi học không tồn tại");
+        
+        await session.update({
+            start_time: start_time || session.start_time,
+            end_time: end_time || session.end_time,
+            room: room || session.room,
+            teacher_id: teacher_id !== undefined ? (teacher_id || null) : session.teacher_id
+        });
+        return session;
     },
 
     // --- STUDENTS ---
@@ -1302,6 +1346,15 @@ export const adminService = {
             let year = dateParts[2].trim();
             if (year.length === 2) year = "20" + year; // Convert 2-digit to 4-digit year
             const dateISO = `${year}-${month}-${day}`; // yyyy-MM-dd
+
+            if (cls.start_date && dateISO < cls.start_date) {
+                invalidRows.push({ ...row, rowNum, error: `Ngày học (${dateStr}) trước ngày bắt đầu lớp (${cls.start_date})` });
+                continue;
+            }
+            if (cls.end_date && dateISO > cls.end_date) {
+                invalidRows.push({ ...row, rowNum, error: `Ngày học (${dateStr}) sau ngày kết thúc lớp (${cls.end_date})` });
+                continue;
+            }
 
             const padTime = (t) => {
                 const parts = t.split(":");

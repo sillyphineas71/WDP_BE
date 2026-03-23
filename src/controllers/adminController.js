@@ -121,6 +121,12 @@ export const adminController = {
             res.status(200).json({ success: true, message: "Class sessions updated successfully", data });
         } catch (error) { next(error); }
     },
+    updateSession: async (req, res, next) => {
+        try {
+            const data = await adminService.updateSession(req.params.id, req.params.sessionId, req.body);
+            res.status(200).json({ success: true, message: "Class session updated successfully", data });
+        } catch (error) { next(error); }
+    },
     deleteSessions: async (req, res, next) => {
         try {
             await adminService.deleteSessions(req.params.id, req.body.sessionIds);
