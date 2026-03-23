@@ -40,7 +40,7 @@ const assertUUID = (id, field) => {
  * - Class.teacher_id === teacherId
  * - Class.status === "active"
  */
-const verifyTeacherOwnsClass = async (teacherId, classId) => {
+const verifyTeacherOwnsClass = async (teacherId, classId, checkActive = true) => {
   assertUUID(classId, "classId");
 
   const cls = await Class.findByPk(classId, {
@@ -53,7 +53,7 @@ const verifyTeacherOwnsClass = async (teacherId, classId) => {
   if (cls.teacher_id !== teacherId) {
     throw httpError("Bạn không có quyền thao tác trên lớp học này.", 403, "FORBIDDEN");
   }
-  if (cls.status !== "active") {
+  if (checkActive && cls.status !== "active") {
     throw httpError(
       "Lớp học không ở trạng thái hoạt động. Không thể thao tác tài liệu.",
       400,
@@ -116,7 +116,7 @@ const isValidUrl = (str) => {
  * @param {string} classId
  */
 export const getClassMaterials = async (teacherId, classId) => {
-  await verifyTeacherOwnsClass(teacherId, classId);
+  await verifyTeacherOwnsClass(teacherId, classId, false);
 
   // Lấy tất cả materials của class
   const materials = await Material.findAll({
@@ -176,7 +176,7 @@ export const getClassMaterials = async (teacherId, classId) => {
  * Lấy tài liệu theo buổi học cụ thể.
  */
 export const getMaterialsBySession = async (teacherId, classId, sessionId) => {
-  await verifyTeacherOwnsClass(teacherId, classId);
+  await verifyTeacherOwnsClass(teacherId, classId, false);
   assertUUID(sessionId, "sessionId");
 
   // Verify session thuộc class

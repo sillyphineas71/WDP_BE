@@ -74,7 +74,7 @@ const assertUUID = (id, field) => {
   }
 };
 
-const getUserName = (u) => u?.full_name || u?.email || "[Giảng viên]";
+const getUserName = (u) => u?.full_name || u?.email || "[Giáo viên]";
 
 /**
  * Cross-check 3 conflicts:
@@ -121,7 +121,7 @@ const checkConflictsOrThrow = async ({
     if (teacherConflict) {
       const teacher = await User.findByPk(teacher_id, { transaction: t });
       throw httpError(
-        `Lỗi: Giảng viên ${getUserName(teacher)} đã có lịch dạy trong khoảng thời gian này.`,
+        `Lỗi: Giáo viên ${getUserName(teacher)} đã có lịch dạy trong khoảng thời gian này.`,
         409,
         "SCHED_CONFLICT_TEACHER",
         { conflict_session_id: teacherConflict.id },
@@ -193,7 +193,7 @@ export const createManualClassSession = async (adminId, body) => {
     // teacher must exist
     const teacher = await User.findByPk(teacher_id, { transaction: t });
     if (!teacher)
-      throw httpError("Giảng viên của lớp không tồn tại", 404, "NOT_FOUND", {
+      throw httpError("Giáo viên của lớp không tồn tại", 404, "NOT_FOUND", {
         teacher_id,
       });
 

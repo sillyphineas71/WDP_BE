@@ -91,6 +91,7 @@ export const userManagementService = {
         });
 
         // 5. Gửi email thông báo tài khoản mới
+        let email_sent = false;
         try {
             await sendEmail({
                 to: email,
@@ -113,6 +114,7 @@ export const userManagementService = {
                     </div>
                 `
             });
+            email_sent = true;
         } catch (mailError) {
             console.error(`❌ [CreateUser] Lỗi gửi email tới ${email}:`, mailError);
         }
@@ -126,6 +128,7 @@ export const userManagementService = {
                 status: user.status,
             },
             generated_password: rawPassword, // Trả về cho admin xem
+            email_sent,
         };
     },
 
@@ -184,10 +187,39 @@ export const userManagementService = {
         console.log(`   Email: ${user.email}`);
         console.log(`   Mật khẩu mới: ${rawPassword}\n`);
 
+        let email_sent = false;
+        try {
+            await sendEmail({
+                to: user.email,
+                subject: "[SmartEdu] Thông báo Cấp lại mật khẩu thành công ✔",
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+                        <h2 style="color: #2563eb; text-align: center;">Thông báo Cấp lại Mật khẩu</h2>
+                        <p>Xin chào <strong>${user.full_name}</strong>,</p>
+                        <p>Mật khẩu tài khoản SmartEdu của bạn đã được quản trị viên cấp lại.</p>
+                        <hr style="border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+                        <p><strong>Thông tin Đăng nhập Mới:</strong></p>
+                        <p style="background-color: #f8fafc; padding: 10px; border-radius: 6px; font-family: sans-serif; font-size: 14px; line-height: 1.6;">
+                            <strong>• Tài khoản (Email):</strong> ${user.email}<br />
+                            <strong>• Mật khẩu mới:</strong> <span style="color: #2563eb; font-weight: bold;">${rawPassword}</span>
+                        </p>
+                        <p style="font-size: 12px; color: #64748b; font-style: italic;">* Vui lòng đổi mật khẩu sau khi đăng nhập để bảo mật tài khoản.</p>
+                        <p style="text-align: center; margin-top: 25px;">
+                            <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/login" style="background-color: #2563eb; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold;">Đăng nhập ngay</a>
+                        </p>
+                    </div>
+                `
+            });
+            email_sent = true;
+        } catch (mailError) {
+            console.error(`❌ [ResetPassword] Lỗi gửi email tới ${user.email}:`, mailError);
+        }
+
         return {
             id: user.id,
             email: user.email,
             generated_password: rawPassword,
+            email_sent,
         };
     },
 

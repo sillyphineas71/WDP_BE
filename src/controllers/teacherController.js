@@ -285,6 +285,21 @@ export const deleteAssessment = async (req, res, next) => {
     } catch (error) { next(error); }
 };
 
+export const getStudentsByClass = async (req, res, next) => {
+    try {
+        const teacherId = req.user.id;
+        const classId = req.params.classId;
+
+        const data = await teacherService.getStudentsByClass(teacherId, classId);
+
+        res.status(200).json({
+            success: true,
+            message: "Lấy danh sách học sinh thành công",
+            data: data
+        });
+    } catch (error) { next(error); }
+};
+
 export const getSubmissionsByAssessment = async (req, res, next) => {
     try {
         const teacherId = req.user.id;

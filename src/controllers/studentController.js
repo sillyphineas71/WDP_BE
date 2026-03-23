@@ -158,3 +158,16 @@ export const getGradesOverview = async (req, res, next) => {
         next(error);
     }
 };
+
+export const getQuizAttemptDetail = async (req, res, next) => {
+    try {
+        const studentId = req.user.id;
+        const { submissionId } = req.params;
+
+        const data = await studentService.getQuizAttemptDetail(studentId, submissionId);
+
+        return res.status(200).json(successResponse(data, "Lấy chi tiết lượt làm bài thành công"));
+    } catch (error) {
+        next(error);
+    }
+};

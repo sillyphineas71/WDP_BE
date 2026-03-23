@@ -146,7 +146,7 @@ export const adminController = {
             const result = await adminService.importStudents(req.params.id, req.body.emails);
             res.status(201).json({ 
                 success: true, 
-                message: `Đã nhập thành công ${result.total_imported} học viên vào lớp.`, 
+                message: `Đã nhập thành công ${result.total_imported} học sinh vào lớp.`, 
                 data: result 
             });
         } catch (error) { next(error); }
@@ -170,7 +170,7 @@ export const adminController = {
     unenrollStudent: async (req, res, next) => {
         try {
             await adminService.unenrollStudent(req.params.id, req.params.studentId);
-            res.status(200).json({ success: true, message: "Học viên đã được xóa khỏi lớp" });
+            res.status(200).json({ success: true, message: "Học sinh đã được xóa khỏi lớp" });
         } catch (error) { next(error); }
     },
 

@@ -73,7 +73,7 @@ const verifyStudentCanAccessMaterial = async (studentId, materialId) => {
   // E1: Tài liệu không tồn tại
   if (!material) {
     throw httpError(
-      "Tài liệu này không tồn tại hoặc đã bị Giảng viên gỡ bỏ. Vui lòng tải lại trang.",
+      "Tài liệu này không tồn tại hoặc đã bị Giáo viên gỡ bỏ. Vui lòng tải lại trang.",
       404,
       "NOT_FOUND",
     );
@@ -82,7 +82,7 @@ const verifyStudentCanAccessMaterial = async (studentId, materialId) => {
   // Tài liệu bị ẩn bởi GV
   if (!material.is_visible) {
     throw httpError(
-      "Tài liệu này không tồn tại hoặc đã bị Giảng viên gỡ bỏ. Vui lòng tải lại trang.",
+      "Tài liệu này không tồn tại hoặc đã bị Giáo viên gỡ bỏ. Vui lòng tải lại trang.",
       404,
       "NOT_FOUND",
     );

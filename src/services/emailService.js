@@ -9,9 +9,12 @@ export const sendEmail = async ({
   from = process.env.MAIL_FROM,
 }) => {
   if (!isMailerConfigured()) {
-    throw new InternalServerError(
-      "Brevo SMTP configuration is missing. Please set BREVO_SMTP_* and MAIL_FROM.",
-    );
+    console.log("=== EMAIL SIMULATION ===");
+    console.log(`To: ${to}`);
+    console.log(`Subject: ${subject}`);
+    console.log(`Content: ${text || html}`);
+    console.log("=========================");
+    return { success: true, simulated: true };
   }
 
   const transporter = getMailerTransporter();

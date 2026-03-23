@@ -149,6 +149,7 @@ export const studentGradeService = {
 
             gradeItems.push({
                 assessment_id: assessment.id,
+                submission_id: submission ? submission.id : null,
                 title: assessment.title,
                 type: assessment.type || "ESSAY",
                 weight: getAssessmentWeight(assessment),
@@ -158,6 +159,7 @@ export const studentGradeService = {
                 feedback,
                 ai_feedback: aiFeedback,
                 submitted_at: submittedAt,
+                due_at: assessment.due_at,
             });
         }
 
