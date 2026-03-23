@@ -28,7 +28,11 @@ export const createQuizSchema = Joi.object({
     // Open/Close time (UC E2)
     openAt: Joi.date().iso().allow(null),
     closeAt: Joi.date().iso().allow(null),
+
+    // Grading
+    max_score: Joi.number().min(0).default(10),
 })
+
     .custom((value, helpers) => {
         if (value.openAt && value.closeAt) {
             const open = new Date(value.openAt).getTime();

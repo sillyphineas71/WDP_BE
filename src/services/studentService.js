@@ -610,7 +610,15 @@ export const studentService = {
 
                 // Close per-student if attempt limit exhausted (only for QUIZ type)
                 const isAttemptExhausted = attemptLimit !== null && attemptCount >= attemptLimit;
-                const effectiveStatus = (finalStatus === 'published' && isAttemptExhausted) ? 'closed' : finalStatus;
+                let effectiveStatus = (finalStatus === 'published' && isAttemptExhausted) ? 'closed' : finalStatus;
+
+                // Check if upcoming for student display (Alternative Flow A2 / BR_QZ_01)
+                const settings = parseQuizSettings(a.instructions, a.settings_json);
+                const openAt = settings.openAt ? new Date(settings.openAt) : (a.allow_from ? new Date(a.allow_from) : null);
+                if (effectiveStatus === 'published' && openAt && now < openAt) {
+                    effectiveStatus = 'upcoming';
+                }
+
 
                 const latestSub = finishedSubmissions.sort((x, y) => new Date(y.submitted_at) - new Date(x.submitted_at))[0];
                 let subStatus = 'unsubmitted';
@@ -628,7 +636,9 @@ export const studentService = {
                     title: a.title,
                     type: a.type,
                     status: effectiveStatus,
+                    openAt: openAt ? openAt.toLocaleString('en-US') : 'Ngay lập tức',
                     due: a.due_at ? a.due_at.toLocaleString('en-US') : 'No due date',
+
                     cutoff: a.cutoff_at ? a.cutoff_at.toLocaleString('en-US') : 'No cutoff',
                     points: Number(a.max_score) || 100,
                     studentScore: gradeScore,

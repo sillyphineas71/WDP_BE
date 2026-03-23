@@ -164,6 +164,7 @@ export const teacherService = {
                     time_limit_minutes: timeLimit,
                     attempt_limit: attemptLimit,
                     settings_json: settingsMeta,
+                    max_score: payload.max_score ?? 10,
                     status: "draft"
                 },
                 { transaction: t }
@@ -216,18 +217,25 @@ export const teacherService = {
             order: [["created_at", "DESC"]]
         });
 
-        return quizzes.map(q => ({
-            id: q.id,
-            title: q.title,
-            max_score: q.max_score,
-            status: q.status,
-            dueAt: q.due_at,
-            timeLimit: q.time_limit_minutes,
-            attemptLimit: q.attempt_limit,
-            questionCount: q.questions?.length || 0,
-            submissionCount: q.submissions?.length || 0,
-            createdAt: q.created_at
-        }));
+        return quizzes.map(q => {
+            const settings = parseQuizSettings(q.instructions, q.settings_json);
+            return {
+                id: q.id,
+                title: q.title,
+                max_score: q.max_score,
+                status: q.status,
+                due_at: q.due_at, // For compatibility
+                dueAt: q.due_at,
+                open_at: settings.openAt || q.allow_from || null, // ADDED
+                openAt: settings.openAt || q.allow_from || null, // ADDED
+                timeLimit: q.time_limit_minutes,
+                attemptLimit: q.attempt_limit,
+                questionCount: q.questions?.length || 0,
+                submissionCount: q.submissions?.length || 0,
+                createdAt: q.created_at
+            };
+        });
+
     },
 
     /**
@@ -295,6 +303,7 @@ export const teacherService = {
                 time_limit_minutes: timeLimit,
                 attempt_limit: attemptLimit,
                 settings_json: settingsMeta,
+                max_score: payload.max_score !== undefined ? payload.max_score : quiz.max_score,
                 status: payload.status || quiz.status
             }, { transaction: t });
             
@@ -569,16 +578,34 @@ export const teacherService = {
             throw new NotFoundError("Lớp học không tồn tại hoặc bạn không quản lý lớp này.");
         }
 
+        const now = new Date();
+        if (data.allow_from) {
+            if (new Date(data.allow_from) < new Date(now.getTime() - 60000)) {
+                throw new ConflictError("Thời gian bắt đầu mở cổng không được nằm trong quá khứ. Vui lòng chọn thời điểm hiện tại hoặc tương lai.");
+            }
+        }
+        if (data.due_at) {
+            if (new Date(data.due_at) < new Date(now.getTime() - 60000)) {
+                throw new ConflictError("Hạn nộp không được nằm trong quá khứ.");
+            }
+        }
+        if (data.cutoff_at) {
+            if (new Date(data.cutoff_at) < new Date(now.getTime() - 60000)) {
+                throw new ConflictError("Thời gian đóng cổng không được nằm trong quá khứ.");
+            }
+        }
+
         if (data.allow_from && data.due_at) {
             if (new Date(data.allow_from) > new Date(data.due_at)) {
-                throw new ConflictError("Thời gian bắt đầu nhận bài (Allow from) phải diễn ra trước Hạn nộp (Due date).");
+                throw new ConflictError("Thời gian bắt đầu nhận bài phải diễn ra trước Hạn nộp.");
             }
         }
         if (data.due_at && data.cutoff_at) {
             if (new Date(data.due_at) > new Date(data.cutoff_at)) {
-                throw new ConflictError("Hạn nộp (Due date) phải diễn ra trước Thời gian đóng cổng (Cut-off date).");
+                throw new ConflictError("Hạn nộp phải diễn ra trước Thời gian đóng cổng.");
             }
         }
+
         if (data.allow_from && data.cutoff_at) {
             if (new Date(data.allow_from) > new Date(data.cutoff_at)) {
                 throw new ConflictError("Thời gian bắt đầu nhận bài phải diễn ra trước Thời gian đóng cổng.");
