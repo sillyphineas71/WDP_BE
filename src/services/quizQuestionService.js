@@ -18,7 +18,7 @@ const recalculateQuizPoints = async (quizId, transaction) => {
     const maxScore = assessment.max_score || 100;
     const questionsCount = await QuizQuestion.count({ where: { assessment_id: quizId }, transaction });
     if (questionsCount === 0) return;
-    
+
     const pointsPerQuestion = parseFloat((maxScore / questionsCount).toFixed(2));
     await QuizQuestion.update(
         { points: pointsPerQuestion },
