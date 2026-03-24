@@ -47,6 +47,7 @@ router.get("/dashboard/stats", adminController.getDashboardStats);
 router.get("/reports/data", adminController.getReportData);
 router.get("/reports/filters", adminController.getReportFilters);
 router.get("/reports/teacher-activity", adminController.getTeacherActivity);
+router.get("/reports/export/pdf", adminController.exportReportPDF);
 
 // UC_ADM_05 → UC_ADM_09: User Management
 router.get("/users", userManagementController.getUsers);

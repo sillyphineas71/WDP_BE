@@ -11,8 +11,8 @@ import { ERROR_MESSAGES } from "../constants/messages.js";
  */
 export const isAuth = async (req, res, next) => {
   try {
-    // Get token from header
-    const token = req.headers.authorization?.split(" ")[1];
+    // Get token from header or query (for file downloads)
+    const token = req.headers.authorization?.split(" ")[1] || req.query.token;
 
     if (!token) {
       throw new UnauthorizedError(ERROR_MESSAGES.TOKEN_REQUIRED);

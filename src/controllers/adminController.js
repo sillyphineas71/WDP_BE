@@ -1,4 +1,5 @@
 import { adminService } from "../services/adminService.js";
+import { reportExportService } from "../services/reportExportService.js";
 import { User } from "../models/User.js";
 import { Role } from "../models/Role.js";
 
@@ -183,8 +184,8 @@ export const adminController = {
     },
     getReportData: async (req, res, next) => {
         try {
-            const { semester, course, dateRange } = req.query;
-            const data = await adminService.getReportData(semester, course, dateRange);
+            const { semester, course, dateRange, class_id } = req.query;
+            const data = await adminService.getReportData(semester, course, dateRange, class_id);
             res.status(200).json({ success: true, data });
         } catch (error) { next(error); }
     },
@@ -196,9 +197,32 @@ export const adminController = {
     },
     getTeacherActivity: async (req, res, next) => {
         try {
-            const { semester, course, dateRange } = req.query;
-            const data = await adminService.getTeacherActivity(semester, course, dateRange);
+            const { semester, course, dateRange, class_id } = req.query;
+            const data = await adminService.getTeacherActivity(semester, course, dateRange, class_id);
             res.status(200).json({ success: true, data });
+        } catch (error) { next(error); }
+    },
+    exportReportPDF: async (req, res, next) => {
+        try {
+            const { semester, course, dateRange, class_id, className, activeTab } = req.query;
+            console.log('PDF Export Request - activeTab:', activeTab, 'Filters:', { semester, course, dateRange, class_id, className });
+            
+            // Set headers EARLY to prevent CORS blocking by download managers
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Content-Type', 'application/pdf');
+            const filename = `baocao_${activeTab || 'chung'}_${new Date().getTime()}.pdf`;
+            res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+
+            let teacherActivityData = null;
+            if (activeTab === 'teacher') {
+                teacherActivityData = await adminService.getTeacherActivity(semester, course, dateRange, class_id);
+            }
+
+            const reportData = await adminService.getReportData(semester, course, dateRange, class_id);
+            const doc = await reportExportService.generateReportPDF(reportData, { semester, course, dateRange, className, activeTab }, teacherActivityData);
+            
+            doc.pipe(res);
+            doc.end();
         } catch (error) { next(error); }
     },
 
