@@ -23,6 +23,7 @@ router.put("/classes/:id", adminController.editClass);
 router.put("/classes/:id/assign-teacher", adminController.assignTeacher);
 router.post("/classes/:id/sessions", adminController.addSession);
 router.put("/classes/:id/sessions", adminController.editSessions);
+router.put("/classes/:id/sessions/:sessionId", adminController.updateSession);
 router.delete("/classes/:id/sessions", adminController.deleteSessions);
 router.post("/classes/import/validate", adminController.validateClassImport);
 router.post("/classes/import/confirm", adminController.confirmClassImport);
