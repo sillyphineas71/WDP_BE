@@ -17,11 +17,12 @@ export const errorHandler = (err, req, res, next) => {
     );
   }
 
-  // Operational errors
-  if (err.isOperational === true) {
+  // Operational errors or errors with explicit status
+  if (err.isOperational === true || err.status || err.statusCode) {
+    const status = err.status || err.statusCode || 500;
     return res
-      .status(err.statusCode)
-      .json(errorResponse(err.message, err.statusCode));
+      .status(status)
+      .json(errorResponse(err.message, status));
   }
 
   // Programming or unknown errors

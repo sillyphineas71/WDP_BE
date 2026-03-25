@@ -214,6 +214,15 @@ import { quizQuestionController } from "../controllers/quizQuestionController.js
 import multer from "multer";
 const memoryUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+import { quizExportController } from "../controllers/quizExportController.js";
+
+router.get(
+  "/quizzes/:quizId/export",
+  isAuth,
+  authorize(USER_ROLES.TEACHER),
+  quizExportController.exportQuiz,
+);
+
 router.get("/quizzes/:quizId/questions", quizQuestionController.getQuestions);
 router.post("/quizzes/:quizId/questions", quizQuestionController.createQuestion);
 router.put("/quizzes/questions/:questionId", quizQuestionController.updateQuestion);

@@ -8,7 +8,7 @@ import { Submission } from "../models/Submission.js";
 import { Grade } from "../models/Grade.js";
 import { Assessment } from "../models/Assessment.js";
 import { Material } from "../models/Material.js";
-import { Sequelize } from "sequelize";
+import { Sequelize, QueryTypes } from "sequelize";
 import { ConflictError, NotFoundError } from "../errors/AppError.js";
 
 export const adminService = {
@@ -917,21 +917,48 @@ export const adminService = {
         };
     },
 
-    getReportData: async (semester, courseCode, dateRange) => {
+    getReportData: async (semester, courseCode, dateRange, classId) => {
+        // UC Exception E2: Phạm vi truy xuất dữ liệu quá lớn
+        // If "All Semesters" is selected AND "All Courses" is selected, it's too broad.
+        // Also if Custom Range is selected and > 365 days (though currently custom range is not fully implemented in getReportData)
+        
+        const isBroadSemester = !semester || semester === "All Semesters" || semester === "";
+        const isBroadCourse = !courseCode || courseCode === "All Courses" || courseCode === "";
+        
+        if (isBroadSemester && isBroadCourse && !classId) {
+             const error = new Error("Phạm vi dữ liệu quá lớn để hiển thị cùng lúc. Vui lòng thu hẹp điều kiện lọc (chọn từng học kỳ cụ thể) và thử lại.");
+             error.status = 400;
+             error.isOperational = true;
+             throw error;
+        }
+
         let classWhere = {};
         if (semester && semester !== "All Semesters") classWhere.semester = semester;
 
-        // Find course by name if it matches "CS101 - Introduction..." format or just the code
-        if (courseCode && courseCode !== "All Courses") {
-            const code = courseCode.split(" ")[0]; // Get the ID part
-            const course = await Course.findOne({ where: { code } });
+        if (courseCode && courseCode !== "All Courses" && courseCode !== "") {
+            // Find course by code or full name (case insensitive)
+            const Op = Course.sequelize.Sequelize.Op;
+            const course = await Course.findOne({ 
+                where: { 
+                    [Op.or]: [
+                        { code: { [Op.iLike]: courseCode } },
+                        { name: { [Op.iLike]: `%${courseCode}%` } },
+                        { code: { [Op.iLike]: courseCode.split(" ")[0] } }
+                    ]
+                } 
+            });
             if (course) classWhere.course_id = course.id;
+        }
+
+        if (classId && classId !== "All Classes") {
+            classWhere.id = classId;
         }
 
         // Get grades for classes that match the filter
         let whereClause = `WHERE g.final_score IS NOT NULL`;
         if (classWhere.semester) whereClause += ` AND cl.semester = '${classWhere.semester.replace(/'/g, "''")}'`;
         if (classWhere.course_id) whereClause += ` AND cl.course_id = '${classWhere.course_id}'`;
+        if (classWhere.id) whereClause += ` AND cl.id = '${classWhere.id}'`;
 
         let A = 0, B = 0, C = 0, D = 0, F = 0;
         try {
@@ -952,7 +979,7 @@ export const adminService = {
                 else F++;
             });
         } catch (e) {
-            console.log('[Reports] Grade query error:', e.message);
+            console.log('[Reports] Lỗi truy vấn điểm:', e.message);
         }
 
         const total = A + B + C + D + F || 1; // avoid /0
@@ -981,7 +1008,7 @@ export const adminService = {
 
         let courseEnrollmentData = Object.keys(courseMap).map(k => ({ name: k, students: courseMap[k] }));
         if (courseEnrollmentData.length === 0) {
-            courseEnrollmentData = [{ name: "No Data", students: 0 }];
+            courseEnrollmentData = [{ name: "Không có dữ liệu", students: 0 }];
         }
 
         // Summary stats
@@ -1018,17 +1045,56 @@ export const adminService = {
             }
         } catch (e) { }
 
+        // Detailed table data
+        let detailedData = [];
+        try {
+            // Debug: Check a sample row
+            const [samples] = await Grade.sequelize.query(`SELECT * FROM submissions LIMIT 1`);
+            if (samples.length > 0) {
+                console.log('[Reports DB Debug] Sample submission keys:', Object.keys(samples[0]).join(', '));
+            } else {
+                console.log('[Reports DB Debug] No submissions found in DB');
+            }
+
+            const [detailRows] = await Grade.sequelize.query(`
+                SELECT 
+                    COALESCE(u.full_name, 'Học sinh (ID: ' || SUBSTRING(s.student_id::text, 1, 8) || ')') as student_name,
+                    cl.name as class_name,
+                    COALESCE(c2.code, 'N/A') as course_code,
+                    g.final_score as score,
+                    CASE 
+                        WHEN g.final_score >= 9 THEN 'A'
+                        WHEN g.final_score >= 8 THEN 'B'
+                        WHEN g.final_score >= 7 THEN 'C'
+                        WHEN g.final_score >= 5 THEN 'D'
+                        ELSE 'F'
+                    END as grade_letter
+                FROM grades g
+                JOIN submissions s ON g.submission_id = s.id
+                JOIN assessments a ON s.assessment_id = a.id
+                JOIN classes cl ON a.class_id = cl.id
+                LEFT JOIN courses c2 ON cl.course_id = c2.id
+                LEFT JOIN users u ON s.student_id = u.id
+                ${whereClause}
+                ORDER BY u.full_name ASC NULLS LAST
+            `);
+            detailedData = detailRows;
+        } catch (e) {
+            console.log('[Reports] Lỗi truy vấn chi tiết:', e.message);
+        }
+
         return {
             gradeDistributionData: allGrades.map(g => ({ name: g.name, students: g.value })),
             gradePercentageData,
             courseEnrollmentData,
+            detailedData, // New detailed list
             summaryStats: {
                 avgGrade,
                 passRate,
                 totalStudents,
-                aStudents: A,
-                gradeTotal,
-                aPercent
+                aStudents: allGrades.find(g => g.name === 'A')?.value || 0,
+                gradeTotal: allGrades.reduce((sum, g) => sum + g.value, 0),
+                aPercent: ((allGrades.find(g => g.name === 'A')?.value || 0) / (allGrades.reduce((sum, g) => sum + g.value, 0) || 1) * 100).toFixed(1)
             }
         };
     },
@@ -1043,13 +1109,21 @@ export const adminService = {
         // Get all active courses
         const courses = await Course.findAll({
             attributes: ['id', 'code', 'name'],
+            where: { is_deleted: false },
             order: [['code', 'ASC']]
         });
 
-        return { semesters, courses };
+        // Get all active classes
+        const classes = await Class.findAll({
+            attributes: ['id', 'name', 'semester', 'course_id'],
+            where: { status: 'active' },
+            order: [['name', 'ASC']]
+        });
+
+        return { semesters, courses, classes };
     },
 
-    getTeacherActivity: async (semester, course, dateRange) => {
+    getTeacherActivity: async (semester, course, dateRange, classId) => {
         // Build date range filter
         const dateRangeMap = {
             'This Week': `NOW() - INTERVAL '7 days'`,
@@ -1077,63 +1151,61 @@ export const adminService = {
         // Build class filter clauses
         let semClause = '';
         let courseClause = '';
-        if (semester && semester.trim()) {
+        let classClause = '';
+        if (semester && semester.trim() && semester !== "All Semesters") {
             semClause = `AND cl.semester = '${semester.replace(/'/g, "''")}'`;
         }
-        if (course && course.trim()) {
+        if (course && course.trim() && course !== "All Courses") {
             const courseCode = course.split(' - ')[0].trim();
             courseClause = `AND c2.code = '${courseCode.replace(/'/g, "''")}'`;
         }
+        if (classId && classId.trim() && classId !== "All Classes") {
+            classClause = `AND cl.id = '${classId}'`;
+        }
 
         const buildCaseExpression = (col, table) => {
-            const whenClauses = [];
-            for (let i = numBuckets; i >= 2; i--) {
-                const daysAgo = (numBuckets - i + 1) * dayStep;
-                whenClauses.push(`WHEN ${table}.${col} >= NOW() - INTERVAL '${daysAgo} days' THEN ${i}`);
-            }
-            return `CASE ${whenClauses.join(' ')} ELSE 1 END`;
+            // Using WIDTH_BUCKET for robust grouping into i buckets
+            const maxDays = numBuckets * dayStep;
+            return `WIDTH_BUCKET(EXTRACT(DAY FROM (${table}.${col} - (${dateFrom}))), 0, ${maxDays}, ${numBuckets})`;
         };
 
         // Separate queries for reliability
         let qRows = [], mRows = [], gRows = [];
         try {
             const qQuery = `
-                SELECT ${buildCaseExpression('created_at', 'a')} AS week_num, COUNT(a.id)::int AS count
+                SELECT EXTRACT(DAY FROM (a.created_at - (${dateFrom})))::int AS days_diff, COUNT(a.id)::int AS count
                 FROM assessments a
                 JOIN classes cl ON a.class_id = cl.id
                 JOIN courses c2 ON cl.course_id = c2.id
                 WHERE a.created_at >= ${dateFrom} AND UPPER(a.type::text) = 'QUIZ'
-                ${semClause} ${courseClause}
-                GROUP BY week_num
+                ${semClause} ${courseClause} ${classClause}
+                GROUP BY days_diff
             `;
-            const [qr] = await Grade.sequelize.query(qQuery);
-            qRows = qr;
+            qRows = await Grade.sequelize.query(qQuery, { type: QueryTypes.SELECT });
 
             const mQuery = `
-                SELECT ${buildCaseExpression('created_at', 'm')} AS week_num, COUNT(m.id)::int AS count
+                SELECT EXTRACT(DAY FROM (m.created_at - (${dateFrom})))::int AS days_diff, COUNT(m.id)::int AS count
                 FROM materials m
                 JOIN classes cl ON m.class_id = cl.id
                 JOIN courses c2 ON cl.course_id = c2.id
                 WHERE m.created_at >= ${dateFrom}
-                ${semClause} ${courseClause}
-                GROUP BY week_num
+                ${semClause} ${courseClause} ${classClause}
+                GROUP BY days_diff
             `;
-            const [mr] = await Grade.sequelize.query(mQuery);
-            mRows = mr;
+            mRows = await Grade.sequelize.query(mQuery, { type: QueryTypes.SELECT });
 
             const gQuery = `
-                SELECT ${buildCaseExpression('graded_at', 'g')} AS week_num, COUNT(g.id)::int AS count
+                SELECT EXTRACT(DAY FROM (g.graded_at - (${dateFrom})))::int AS days_diff, COUNT(g.id)::int AS count
                 FROM grades g
                 JOIN submissions s ON g.submission_id = s.id
                 JOIN assessments a ON s.assessment_id = a.id
                 JOIN classes cl ON a.class_id = cl.id
                 JOIN courses c2 ON cl.course_id = c2.id
                 WHERE g.graded_at >= ${dateFrom} AND g.graded_at IS NOT NULL
-                ${semClause} ${courseClause}
-                GROUP BY week_num
+                ${semClause} ${courseClause} ${classClause}
+                GROUP BY days_diff
             `;
-            const [gr] = await Grade.sequelize.query(gQuery);
-            gRows = gr;
+            gRows = await Grade.sequelize.query(gQuery, { type: QueryTypes.SELECT });
         } catch (err) {
             console.error('[getTeacherActivity] query error:', err.message);
         }
@@ -1142,18 +1214,19 @@ export const adminService = {
         const chartMap = {};
         for (let i = 1; i <= numBuckets; i++) chartMap[i] = { quizzes: 0, materials: 0, graded: 0 };
 
-        qRows.forEach(r => {
-            const w = parseInt(r.week_num ?? r.WEEK_NUM ?? r.Week_Num);
-            if (chartMap[w]) chartMap[w].quizzes += parseInt(r.count ?? r.COUNT) || 0;
-        });
-        mRows.forEach(r => {
-            const w = parseInt(r.week_num ?? r.WEEK_NUM ?? r.Week_Num);
-            if (chartMap[w]) chartMap[w].materials += parseInt(r.count ?? r.COUNT) || 0;
-        });
-        gRows.forEach(r => {
-            const w = parseInt(r.week_num ?? r.WEEK_NUM ?? r.Week_Num);
-            if (chartMap[w]) chartMap[w].graded += parseInt(r.count ?? r.COUNT) || 0;
-        });
+        const mapToBucket = (rows, field) => {
+            rows.forEach(r => {
+                const days = parseInt(r.days_diff ?? r.DAYS_DIFF ?? 0);
+                let w = Math.floor(days / dayStep) + 1;
+                if (w > numBuckets) w = numBuckets;
+                if (w < 1) w = 1;
+                if (chartMap[w]) chartMap[w][field] += parseInt(r.count ?? r.COUNT) || 0;
+            });
+        };
+
+        mapToBucket(qRows, 'quizzes');
+        mapToBucket(mRows, 'materials');
+        mapToBucket(gRows, 'graded');
         const activityChartData = Array.from({ length: numBuckets }, (_, i) => ({
             name: `${bucketLabel} ${i + 1}`,
             quizzesCreated: chartMap[i + 1].quizzes,
@@ -1164,34 +1237,34 @@ export const adminService = {
         // Total counts for the date range
         let total_quizzes = 0, total_materials = 0, total_graded = 0;
         try {
-            const [[r]] = await Grade.sequelize.query(`
+            const [r] = await Grade.sequelize.query(`
                 SELECT COUNT(a.id)::int as total_quizzes
                 FROM assessments a
                 JOIN classes cl ON a.class_id = cl.id
                 JOIN courses c2 ON cl.course_id = c2.id
                 WHERE UPPER(a.type::text) = 'QUIZ'
                   AND a.created_at >= ${dateFrom}
-                  ${semClause} ${courseClause}
-            `);
+                  ${semClause} ${courseClause} ${classClause}
+            `, { type: QueryTypes.SELECT });
             total_quizzes = r?.total_quizzes || 0;
         } catch (e) {
             console.error('[getTeacherActivity] total_quizzes error:', e.message);
         }
 
         try {
-            const [[r]] = await Grade.sequelize.query(`
+            const [r] = await Grade.sequelize.query(`
                 SELECT COUNT(m.id)::int as total_materials
                 FROM materials m
                 JOIN classes cl ON m.class_id = cl.id
                 JOIN courses c2 ON cl.course_id = c2.id
                 WHERE m.created_at >= ${dateFrom}
-                  ${semClause} ${courseClause}
-            `);
+                  ${semClause} ${courseClause} ${classClause}
+            `, { type: QueryTypes.SELECT });
             total_materials = r?.total_materials || 0;
         } catch (e) { }
 
         try {
-            const [[r]] = await Grade.sequelize.query(`
+            const [r] = await Grade.sequelize.query(`
                 SELECT COUNT(g.id)::int as total_graded
                 FROM grades g
                 JOIN submissions s ON g.submission_id = s.id
@@ -1200,10 +1273,12 @@ export const adminService = {
                 JOIN courses c2 ON cl.course_id = c2.id
                 WHERE g.graded_at IS NOT NULL
                   AND g.graded_at >= ${dateFrom}
-                  ${semClause} ${courseClause}
-            `);
+                  ${semClause} ${courseClause} ${classClause}
+            `, { type: QueryTypes.SELECT });
             total_graded = r?.total_graded || 0;
-        } catch (e) { }
+        } catch (e) {
+            console.error('[getTeacherActivity] total_graded error:', e.message);
+        }
         return {
             activityChartData,
             bucketLabel,
