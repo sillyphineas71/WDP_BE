@@ -30,7 +30,9 @@ import {
   generateAiQuiz,
   updateQuizStatus,
   getQuizDetail,
-  updateQuiz
+  updateQuiz,
+  shareAssessment,
+  getShareStatus
 } from "../controllers/teacherController.js";
 import { isAuth, authorize } from "../middleware/isAuth.js";
 import { USER_ROLES } from "../constants/roles.js";
@@ -130,6 +132,10 @@ router.put("/classes/:classId/assessments/essay/:assessmentId", isAuth, authoriz
 
 // API xóa bài tập
 router.delete("/classes/:classId/assessments/:assessmentId", isAuth, authorize(USER_ROLES.TEACHER), deleteAssessment);
+
+// API chia sẻ bài tập sang lớp khác
+router.post("/assessments/:assessmentId/share", isAuth, authorize(USER_ROLES.TEACHER), shareAssessment);
+router.get("/assessments/:assessmentId/share-status", isAuth, authorize(USER_ROLES.TEACHER), getShareStatus);
 
 // Route lấy danh sách bài nộp của một bài tập cụ thể
 router.get("/assessments/:assessmentId/submissions", isAuth, authorize(USER_ROLES.TEACHER), getSubmissionsByAssessment);

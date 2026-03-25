@@ -538,3 +538,34 @@ export const generateAiQuiz = async (req, res, next) => {
         next(error);
     }
 };
+
+export const shareAssessment = async (req, res, next) => {
+    try {
+        const teacherId = req.user?.id;
+        const { assessmentId } = req.params;
+        const { targetClassIds } = req.body;
+
+        const data = await teacherService.shareAssessment(teacherId, assessmentId, targetClassIds);
+
+        return res.json(
+            successResponse(data, "Đã thực hiện chia sẻ bài tập tới các lớp được chọn.")
+        );
+    } catch (err) {
+        next(err);
+    }
+};
+
+export const getShareStatus = async (req, res, next) => {
+    try {
+        const teacherId = req.user?.id;
+        const { assessmentId } = req.params;
+
+        const data = await teacherService.getShareStatus(teacherId, assessmentId);
+
+        return res.json(
+            successResponse(data, "Lấy trạng thái chia sẻ bài tập thành công.")
+        );
+    } catch (err) {
+        next(err);
+    }
+};

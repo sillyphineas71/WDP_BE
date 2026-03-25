@@ -48,6 +48,10 @@ export function initAssessment(sequelize) {
       settings_json: { 
         type: DataTypes.JSONB 
       }, // Lưu cấu hình nộp bài (online_text, file_submission, max_files...)
+      shared_from: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      }, // ID của bài tập gốc (nếu là bài tập được chia sẻ)
       // =============================================
 
       created_at: {
