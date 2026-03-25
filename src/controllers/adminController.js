@@ -81,6 +81,12 @@ export const adminController = {
             res.status(200).json({ success: true, data });
         } catch (error) { next(error); }
     },
+    upgradeClass: async (req, res, next) => {
+        try {
+            const data = await adminService.upgradeClass(req.params.id, req.body);
+            res.status(201).json({ success: true, message: "Lên lớp thành công", data });
+        } catch (error) { next(error); }
+    },
     validateClassImport: async (req, res, next) => {
         try {
             const { rows } = req.body;
