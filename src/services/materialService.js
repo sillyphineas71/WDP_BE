@@ -6,15 +6,16 @@ import {
   Course,
   ClassSession,
 } from "../models/index.js";
-import { getTypeFromFilename, getPublicIdFromUrl, cloudinary } from "../middleware/uploadMiddleware.js";
-
-// ────────────────────────────────────────────
-// Helpers
-// ────────────────────────────────────────────
+import {
+  getTypeFromFilename,
+  getPublicIdFromUrl,
+  cloudinary,
+} from "../middleware/uploadMiddleware.js";
 
 const httpError = (message, statusCode, code, details) => {
   const err = new Error(message);
   err.statusCode = statusCode;
+  err.isOperational = true;
   if (code) err.code = code;
   if (details) err.details = details;
   return err;
@@ -34,12 +35,6 @@ const assertUUID = (id, field) => {
   }
 };
 
-/**
- * Verify giảng viên có quyền thao tác trên lớp này.
- * - Class phải tồn tại
- * - Class.teacher_id === teacherId
- * - Class.status === "active"
- */
 const verifyTeacherOwnsClass = async (teacherId, classId, checkActive = true) => {
   assertUUID(classId, "classId");
 
@@ -64,10 +59,6 @@ const verifyTeacherOwnsClass = async (teacherId, classId, checkActive = true) =>
   return cls;
 };
 
-/**
- * Verify giảng viên có quyền thao tác trên tài liệu này.
- * Kiểm tra Material tồn tại + thuộc lớp mà GV phụ trách.
- */
 const verifyTeacherOwnsMaterial = async (teacherId, materialId) => {
   assertUUID(materialId, "materialId");
 
@@ -91,9 +82,6 @@ const verifyTeacherOwnsMaterial = async (teacherId, materialId) => {
   return material;
 };
 
-/**
- * Kiểm tra URL hợp lệ cơ bản.
- */
 const isValidUrl = (str) => {
   try {
     const url = new URL(str);
@@ -103,83 +91,69 @@ const isValidUrl = (str) => {
   }
 };
 
-// ────────────────────────────────────────────
-// 1. GET CLASS MATERIALS (nhóm theo chung + buổi)
-// ────────────────────────────────────────────
-
-/**
- * Lấy tất cả tài liệu của lớp, nhóm theo:
- * - "general": tài liệu chung (session_id IS NULL)
- * - "by_session": nhóm theo từng buổi
- *
- * @param {string} teacherId
- * @param {string} classId
- */
 export const getClassMaterials = async (teacherId, classId) => {
   await verifyTeacherOwnsClass(teacherId, classId, false);
 
-  // Lấy tất cả materials của class
   const materials = await Material.findAll({
     where: { class_id: classId },
     attributes: [
-      "id", "class_id", "session_id", "uploaded_by", "type",
-      "title", "description", "file_url", "original_filename",
-      "file_size", "is_visible", "created_at", "updated_at",
+      "id",
+      "class_id",
+      "session_id",
+      "uploaded_by",
+      "type",
+      "title",
+      "description",
+      "file_url",
+      "original_filename",
+      "file_size",
+      "is_visible",
+      "created_at",
+      "updated_at",
     ],
     order: [["created_at", "ASC"]],
   });
 
-  // Lấy tất cả sessions của class để đặt vào cấu trúc cây
   const sessions = await ClassSession.findAll({
     where: { class_id: classId },
     attributes: ["id", "start_time", "end_time", "topic", "status"],
     order: [["start_time", "ASC"]],
   });
 
-  // Phân loại
   const general = [];
   const sessionMaterialsMap = new Map();
 
-  for (const m of materials) {
-    const plain = m.toJSON();
-    if (!m.session_id) {
+  for (const material of materials) {
+    const plain = material.toJSON();
+    if (!material.session_id) {
       general.push(plain);
     } else {
-      if (!sessionMaterialsMap.has(m.session_id)) {
-        sessionMaterialsMap.set(m.session_id, []);
+      if (!sessionMaterialsMap.has(material.session_id)) {
+        sessionMaterialsMap.set(material.session_id, []);
       }
-      sessionMaterialsMap.get(m.session_id).push(plain);
+      sessionMaterialsMap.get(material.session_id).push(plain);
     }
   }
 
-  // Build by_session array (bao gồm cả buổi chưa có tài liệu)
-  const bySession = sessions.map((s, idx) => ({
+  const bySession = sessions.map((session, idx) => ({
     session: {
-      id: s.id,
-      index: idx + 1, // "Buổi 1, 2, 3..."
-      start_time: s.start_time,
-      end_time: s.end_time,
-      topic: s.topic,
-      status: s.status,
+      id: session.id,
+      index: idx + 1,
+      start_time: session.start_time,
+      end_time: session.end_time,
+      topic: session.topic,
+      status: session.status,
     },
-    materials: sessionMaterialsMap.get(s.id) || [],
+    materials: sessionMaterialsMap.get(session.id) || [],
   }));
 
   return { general, by_session: bySession };
 };
 
-// ────────────────────────────────────────────
-// 2. GET MATERIALS BY SESSION
-// ────────────────────────────────────────────
-
-/**
- * Lấy tài liệu theo buổi học cụ thể.
- */
 export const getMaterialsBySession = async (teacherId, classId, sessionId) => {
   await verifyTeacherOwnsClass(teacherId, classId, false);
   assertUUID(sessionId, "sessionId");
 
-  // Verify session thuộc class
   const session = await ClassSession.findOne({
     where: { id: sessionId, class_id: classId },
     attributes: ["id", "start_time", "end_time", "topic", "status"],
@@ -196,8 +170,16 @@ export const getMaterialsBySession = async (teacherId, classId, sessionId) => {
   const materials = await Material.findAll({
     where: { class_id: classId, session_id: sessionId },
     attributes: [
-      "id", "type", "title", "description", "file_url",
-      "original_filename", "file_size", "is_visible", "created_at", "updated_at",
+      "id",
+      "type",
+      "title",
+      "description",
+      "file_url",
+      "original_filename",
+      "file_size",
+      "is_visible",
+      "created_at",
+      "updated_at",
     ],
     order: [["created_at", "ASC"]],
   });
@@ -205,29 +187,15 @@ export const getMaterialsBySession = async (teacherId, classId, sessionId) => {
   return { session: session.toJSON(), materials };
 };
 
-// ────────────────────────────────────────────
-// 3. UPLOAD MATERIAL
-// ────────────────────────────────────────────
-
-/**
- * Upload tài liệu (file hoặc link URL).
- *
- * @param {string} teacherId
- * @param {string} classId
- * @param {object} body  - { title, description?, session_id?, url? }
- * @param {object|null} file - multer file object (nếu upload file)
- */
 export const uploadMaterial = async (teacherId, classId, body, file) => {
   await verifyTeacherOwnsClass(teacherId, classId);
 
   const { title, description, session_id, url } = body;
 
-  // Validate title
   if (!title || String(title).trim() === "") {
     throw httpError("Tên tài liệu (title) là bắt buộc.", 400, "VALIDATION_ERROR");
   }
 
-  // Phải có file HOẶC url
   if (!file && !url) {
     throw httpError(
       "Vui lòng chọn file để tải lên hoặc nhập URL đường dẫn.",
@@ -236,7 +204,6 @@ export const uploadMaterial = async (teacherId, classId, body, file) => {
     );
   }
 
-  // Không được gửi cả 2
   if (file && url) {
     throw httpError(
       "Chỉ được chọn 1 trong 2: tải file hoặc nhập URL, không cả hai.",
@@ -245,7 +212,6 @@ export const uploadMaterial = async (teacherId, classId, body, file) => {
     );
   }
 
-  // Validate session_id nếu có → phải thuộc class
   if (session_id) {
     assertUUID(session_id, "session_id");
     const session = await ClassSession.findOne({
@@ -263,23 +229,19 @@ export const uploadMaterial = async (teacherId, classId, body, file) => {
   let materialData;
 
   if (file) {
-    // ── Upload file → Cloudinary ──
-    const materialType = getTypeFromFilename(file.originalname);
-
     materialData = {
       class_id: classId,
       session_id: session_id || null,
       uploaded_by: teacherId,
-      type: materialType,
+      type: getTypeFromFilename(file.originalname),
       title: String(title).trim(),
       description: description ? String(description).trim() : null,
-      file_url: file.path, // Cloudinary public URL
+      file_url: file.path,
       original_filename: file.originalname,
       file_size: file.size || null,
       is_visible: true,
     };
   } else {
-    // ── Link URL ──
     if (!isValidUrl(url)) {
       throw httpError(
         "URL không hợp lệ. Vui lòng nhập URL bắt đầu bằng http:// hoặc https://",
@@ -302,17 +264,9 @@ export const uploadMaterial = async (teacherId, classId, body, file) => {
     };
   }
 
-  const material = await Material.create(materialData);
-  return material;
+  return Material.create(materialData);
 };
 
-// ────────────────────────────────────────────
-// 4. UPDATE MATERIAL (đổi tên, mô tả, URL)
-// ────────────────────────────────────────────
-
-/**
- * Chỉnh sửa tài liệu: đổi title, description, hoặc cập nhật URL (nếu type=link).
- */
 export const updateMaterial = async (teacherId, materialId, body) => {
   const material = await verifyTeacherOwnsMaterial(teacherId, materialId);
 
@@ -329,7 +283,6 @@ export const updateMaterial = async (teacherId, materialId, body) => {
     updateData.description = body.description ? String(body.description).trim() : null;
   }
 
-  // Chỉ cho phép cập nhật URL nếu type là "link"
   if (body.url !== undefined) {
     if (material.type !== "link") {
       throw httpError(
@@ -348,10 +301,8 @@ export const updateMaterial = async (teacherId, materialId, body) => {
     updateData.file_url = body.url;
   }
 
-  // Cho phép di chuyển tài liệu sang buổi khác hoặc về "chung"
   if (body.session_id !== undefined) {
     if (body.session_id === null || body.session_id === "") {
-      // Di chuyển về "Tài liệu chung"
       updateData.session_id = null;
     } else {
       assertUUID(body.session_id, "session_id");
@@ -379,13 +330,111 @@ export const updateMaterial = async (teacherId, materialId, body) => {
   return material;
 };
 
-// ────────────────────────────────────────────
-// 5. TOGGLE VISIBILITY (Ẩn/Hiện)
-// ────────────────────────────────────────────
+export const shareMaterial = async (teacherId, materialId, body) => {
+  const material = await verifyTeacherOwnsMaterial(teacherId, materialId);
+  const targetClassIds = Array.isArray(body?.target_class_ids) ? body.target_class_ids : [];
 
-/**
- * Bật/tắt hiển thị tài liệu (A1).
- */
+  if (targetClassIds.length === 0) {
+    throw httpError(
+      "Vui lòng chọn ít nhất một lớp để chia sẻ tài liệu.",
+      400,
+      "VALIDATION_ERROR",
+    );
+  }
+
+  const normalizedTargetIds = [...new Set(targetClassIds.map((id) => String(id).trim()).filter(Boolean))];
+  normalizedTargetIds.forEach((classId) => assertUUID(classId, "target_class_id"));
+
+  const filteredTargetIds = normalizedTargetIds.filter((classId) => classId !== material.class_id);
+  if (filteredTargetIds.length === 0) {
+    throw httpError(
+      "Kh?ng c? l?p ??ch h?p l? ?? chia s?. L?p hi?n t?i s? kh?ng ???c t?nh.",
+      400,
+      "VALIDATION_ERROR",
+    );
+  }
+
+  const targetClasses = await Class.findAll({
+    where: {
+      id: { [Op.in]: filteredTargetIds },
+      teacher_id: teacherId,
+      status: "active",
+    },
+    attributes: ["id", "name"],
+    include: [
+      {
+        model: Course,
+        as: "course",
+        required: false,
+        attributes: ["id", "code", "name"],
+      },
+    ],
+  });
+
+  if (targetClasses.length !== filteredTargetIds.length) {
+    throw httpError(
+      "Một hoặc nhiều lớp đích không tồn tại, không hoạt động, hoặc bạn không có quyền thao tác.",
+      403,
+      "FORBIDDEN",
+    );
+  }
+
+  const existingShares = await Material.findAll({
+    where: {
+      class_id: { [Op.in]: filteredTargetIds },
+      title: material.title,
+      file_url: material.file_url,
+      uploaded_by: teacherId,
+    },
+    attributes: ["class_id"],
+  });
+
+  const alreadySharedClassIds = new Set(existingShares.map((item) => item.class_id));
+  const shareTargets = targetClasses.filter((targetClass) => !alreadySharedClassIds.has(targetClass.id));
+
+  if (shareTargets.length === 0) {
+    throw httpError(
+      "Tài liệu này đã được chia sẻ tới các lớp đã chọn trước đó.",
+      409,
+      "DUPLICATE_SHARE",
+    );
+  }
+
+  const timestamp = new Date();
+  const createdMaterials = await Material.bulkCreate(
+    shareTargets.map((targetClass) => ({
+      class_id: targetClass.id,
+      session_id: null,
+      uploaded_by: teacherId,
+      type: material.type,
+      title: material.title,
+      description: material.description,
+      file_url: material.file_url,
+      original_filename: material.original_filename,
+      file_size: material.file_size,
+      is_visible: material.is_visible,
+      created_at: timestamp,
+      updated_at: timestamp,
+    })),
+    { returning: true },
+  );
+
+  return {
+    source_material_id: material.id,
+    shared_count: createdMaterials.length,
+    skipped_count: alreadySharedClassIds.size,
+    shared_to: shareTargets.map((targetClass) => {
+      const created = createdMaterials.find((item) => item.class_id === targetClass.id);
+      return {
+        class_id: targetClass.id,
+        class_name: targetClass.name,
+        course_code: targetClass.course?.code || null,
+        material_id: created?.id || null,
+      };
+    }),
+  };
+};
+
 export const toggleVisibility = async (teacherId, materialId) => {
   const material = await verifyTeacherOwnsMaterial(teacherId, materialId);
 
@@ -404,25 +453,25 @@ export const toggleVisibility = async (teacherId, materialId) => {
   };
 };
 
-// ────────────────────────────────────────────
-// 6. DELETE MATERIAL
-// ────────────────────────────────────────────
-
-/**
- * Xóa tài liệu: xóa file trên Cloudinary (nếu type !== link) + xóa record DB (A3).
- */
 export const deleteMaterial = async (teacherId, materialId) => {
   const material = await verifyTeacherOwnsMaterial(teacherId, materialId);
 
-  // Xóa file trên Cloudinary nếu đây là file upload (không phải link)
   if (material.type !== "link" && material.file_url) {
     try {
-      const publicId = getPublicIdFromUrl(material.file_url);
-      if (publicId) {
-        await cloudinary.uploader.destroy(publicId, { resource_type: "raw" });
+      const sharedReferenceCount = await Material.count({
+        where: {
+          file_url: material.file_url,
+          id: { [Op.ne]: material.id },
+        },
+      });
+
+      if (sharedReferenceCount === 0) {
+        const publicId = getPublicIdFromUrl(material.file_url);
+        if (publicId) {
+          await cloudinary.uploader.destroy(publicId, { resource_type: "raw" });
+        }
       }
     } catch (cloudErr) {
-      // Nếu xóa Cloudinary lỗi → vẫn tiếp tục xóa DB record
       console.warn(`Cảnh báo: Không thể xóa file trên Cloudinary: ${cloudErr.message}`);
     }
   }

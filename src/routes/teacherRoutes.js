@@ -200,6 +200,9 @@ router.post(
 // Chỉnh sửa tài liệu (đổi tên, mô tả, URL)
 router.put("/materials/:materialId", materialCtrl.updateMaterial);
 
+// Chia sẻ tài liệu sang các lớp khác mà giáo viên đang dạy
+router.post("/materials/:materialId/share", materialCtrl.shareMaterial);
+
 // Bật/tắt hiển thị tài liệu
 router.patch("/materials/:materialId/visibility", materialCtrl.toggleVisibility);
 

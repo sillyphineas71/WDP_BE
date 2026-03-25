@@ -19,9 +19,9 @@ export const errorHandler = (err, req, res, next) => {
 
   // Operational errors
   if (err.isOperational === true) {
-    return res
-      .status(err.statusCode)
-      .json(errorResponse(err.message, err.statusCode));
+    const response = errorResponse(err.message, err.statusCode);
+    if (err.code) response.code = err.code;
+    return res.status(err.statusCode).json(response);
   }
 
   // Programming or unknown errors
