@@ -31,9 +31,59 @@ export const quizExportService = {
         return quiz;
     },
 
-    cleanText: (text) => {
+    processLaTeX: (text) => {
         if (!text) return '';
-        return text.replace(/\$\$/g, '').replace(/\$/g, '').trim();
+        let processed = text;
+        
+        // 1. Xử lý phân số \frac{a}{b} -> a/b
+        while (processed.includes('\\frac')) {
+            const match = processed.match(/\\frac\{((?:[^{}]|\{[^{}]*\})*)\}\{((?:[^{}]|\{[^{}]*\})*)\}/);
+            if (match) {
+                processed = processed.replace(match[0], `${match[1]}/${match[2]}`);
+            } else {
+                break; 
+            }
+        }
+
+        // 2. Chuyển đổi các ký hiệu phổ biến
+        const symbolMap = {
+            '\\\\times': '×',
+            '\\\\div': '÷',
+            '\\\\pm': '±',
+            '\\\\ge': '≥',
+            '\\\\le': '≤',
+            '\\\\neq': '≠',
+            '\\\\approx': '≈',
+            '\\\\infty': '∞',
+            '\\\\cdot': '·',
+            '\\\\sqrt': '√',
+            '\\\\pi': 'π',
+            '\\\\alpha': 'α',
+            '\\\\beta': 'β',
+            '\\\\gamma': 'γ',
+            '\\\\delta': 'δ',
+            '\\\\theta': 'θ',
+            '\\\\sigma': 'σ',
+            '\\\\Delta': 'Δ',
+            '\\\\degree': '°'
+        };
+
+        for (const [key, value] of Object.entries(symbolMap)) {
+            const regex = new RegExp(key, 'g');
+            processed = processed.replace(regex, value);
+        }
+
+        // 3. Số mũ & Chỉ số dưới đơn giản
+        processed = processed.replace(/\^2/g, '²').replace(/\^3/g, '³').replace(/\^n/g, 'ⁿ');
+        processed = processed.replace(/\^\{\s*2\s*\}/g, '²').replace(/\^\{\s*3\s*\}/g, '³');
+        processed = processed.replace(/_1/g, '₁').replace(/_2/g, '₂').replace(/_n/g, 'ₙ');
+
+        // 4. Xóa LaTeX markers và làm sạch
+        return processed.replace(/\$\$/g, '').replace(/\$/g, '').trim();
+    },
+
+    cleanText: (text) => {
+        return quizExportService.processLaTeX(text);
     },
 
     getCleanInstructions: (instructions) => {
