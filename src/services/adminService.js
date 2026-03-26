@@ -10,7 +10,6 @@ import { Assessment } from "../models/Assessment.js";
 import { Material } from "../models/Material.js";
 import { Sequelize, QueryTypes } from "sequelize";
 import { ConflictError, NotFoundError } from "../errors/AppError.js";
-import { getEffectiveClassStatus } from "../utils/classStatusHelper.js";
 
 export const adminService = {
     // --- UC_ADM_10: QUẢN LÝ KHÓA HỌC ---
@@ -155,7 +154,7 @@ export const adminService = {
 
     // --- UC_ADM_11: QUẢN LÝ LỚP HỌC ---
     getAllClasses: async () => {
-        const classes = await Class.findAll({
+        return await Class.findAll({
             include: [
                 { model: Course, as: "course", attributes: ["name", "code"] },
                 { model: User, as: "teacher", attributes: ["full_name"] },
@@ -163,11 +162,6 @@ export const adminService = {
             ],
             order: [["created_at", "DESC"]]
         });
-
-        classes.forEach(c => {
-             c.status = getEffectiveClassStatus(c);
-        });
-        return classes;
     },
 
     getClassDetail: async (id) => {
@@ -189,10 +183,7 @@ export const adminService = {
         });
         if (!cls) throw new NotFoundError("Lớp học không tồn tại");
 
-
-        const clsJson = cls.toJSON();
-        clsJson.status = getEffectiveClassStatus(clsJson);
-        return clsJson;
+        return cls;
     },
 
     createClass: async (classData) => {
