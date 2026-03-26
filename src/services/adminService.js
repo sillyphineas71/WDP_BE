@@ -10,6 +10,7 @@ import { Assessment } from "../models/Assessment.js";
 import { Material } from "../models/Material.js";
 import { Sequelize, QueryTypes } from "sequelize";
 import { ConflictError, NotFoundError } from "../errors/AppError.js";
+import { getEffectiveClassStatus } from "../utils/classStatusHelper.js";
 
 export const adminService = {
     // --- UC_ADM_10: QUẢN LÝ KHÓA HỌC ---
@@ -163,11 +164,8 @@ export const adminService = {
             order: [["created_at", "DESC"]]
         });
 
-        const today = new Date();
         classes.forEach(c => {
-             if (c.end_date && new Date(c.end_date) < today && ["active", "upcoming"].includes(c.status)) {
-                 c.status = "closed"; // Override on the fly
-             }
+             c.status = getEffectiveClassStatus(c);
         });
         return classes;
     },
@@ -191,12 +189,10 @@ export const adminService = {
         });
         if (!cls) throw new NotFoundError("Lớp học không tồn tại");
 
-        const today = new Date();
-        if (cls.end_date && new Date(cls.end_date) < today && ["active", "upcoming"].includes(cls.status)) {
-             cls.status = "closed";
-        }
 
-        return cls;
+        const clsJson = cls.toJSON();
+        clsJson.status = getEffectiveClassStatus(clsJson);
+        return clsJson;
     },
 
     createClass: async (classData) => {

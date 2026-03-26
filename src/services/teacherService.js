@@ -2,6 +2,7 @@
 import { Op } from "sequelize";
 import { sequelize, Class, Assessment, Course, AssessmentFile, Submission, SubmissionFile, SubmissionAnswer, Grade, User, ClassSession, QuizQuestion, QuizOption, Enrollment, Notification } from "../models/index.js";
 import { AppError, NotFoundError, ValidationError, ConflictError } from "../errors/AppError.js";
+import { getEffectiveClassStatus } from "../utils/classStatusHelper.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import mammoth from "mammoth";
 
@@ -85,7 +86,7 @@ export const teacherService = {
                 result.push({
                     id: c.id,
                     name: c.name,
-                    status: c.status,
+                    status: getEffectiveClassStatus(c),
                     courseName: c.course?.name,
                     courseCode: c.course?.code,
                     course: c.course,
