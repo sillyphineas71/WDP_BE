@@ -104,7 +104,7 @@ export const adminService = {
                 invalidRows.push({ rowNumber: i + 1, code, name, reason: "Mã môn học đã tồn tại trong hệ thống." });
                 continue;
             }
-            
+
             if (validRows.some(vr => vr.code.toUpperCase() === code.toUpperCase())) {
                 invalidRows.push({ rowNumber: i + 1, code, name, reason: "Mã môn học bị trùng lặp bên trong file Import." });
                 continue;
@@ -278,9 +278,9 @@ export const adminService = {
             }
 
             // Check Course exists (Case-insensitive)
-            const course = await Course.findOne({ 
+            const course = await Course.findOne({
                 where: Sequelize.where(
-                    Sequelize.fn('LOWER', Sequelize.col('code')), 
+                    Sequelize.fn('LOWER', Sequelize.col('code')),
                     course_code.toLowerCase()
                 )
             });
@@ -291,7 +291,7 @@ export const adminService = {
 
             // Check Unique Class inside DB (Case-insensitive)
             const existingClassInDB = await Class.findOne({
-                where: { 
+                where: {
                     course_id: course.id,
                     [Sequelize.Op.and]: [
                         Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('name')), name.toLowerCase()),
@@ -877,15 +877,15 @@ export const adminService = {
         // UC Exception E2: Phạm vi truy xuất dữ liệu quá lớn
         // If "All Semesters" is selected AND "All Courses" is selected, it's too broad.
         // Also if Custom Range is selected and > 365 days (though currently custom range is not fully implemented in getReportData)
-        
+
         const isBroadSemester = !semester || semester === "All Semesters" || semester === "";
         const isBroadCourse = !courseCode || courseCode === "All Courses" || courseCode === "";
-        
+
         if (isBroadSemester && isBroadCourse && !classId) {
-             const error = new Error("Phạm vi dữ liệu quá lớn để hiển thị cùng lúc. Vui lòng thu hẹp điều kiện lọc (chọn từng học kỳ cụ thể) và thử lại.");
-             error.status = 400;
-             error.isOperational = true;
-             throw error;
+            const error = new Error("Phạm vi dữ liệu quá lớn để hiển thị cùng lúc. Vui lòng thu hẹp điều kiện lọc (chọn từng học kỳ cụ thể) và thử lại.");
+            error.status = 400;
+            error.isOperational = true;
+            throw error;
         }
 
         let classWhere = {};
@@ -894,14 +894,14 @@ export const adminService = {
         if (courseCode && courseCode !== "All Courses" && courseCode !== "") {
             // Find course by code or full name (case insensitive)
             const Op = Course.sequelize.Sequelize.Op;
-            const course = await Course.findOne({ 
-                where: { 
+            const course = await Course.findOne({
+                where: {
                     [Op.or]: [
                         { code: { [Op.iLike]: courseCode } },
                         { name: { [Op.iLike]: `%${courseCode}%` } },
                         { code: { [Op.iLike]: courseCode.split(" ")[0] } }
                     ]
-                } 
+                }
             });
             if (course) classWhere.course_id = course.id;
         }
@@ -1014,8 +1014,13 @@ export const adminService = {
 
             const [detailRows] = await Grade.sequelize.query(`
                 SELECT 
+                    s.student_id as student_id,
+                    cl.id as class_id,
                     COALESCE(u.full_name, 'Học sinh (ID: ' || SUBSTRING(s.student_id::text, 1, 8) || ')') as student_name,
                     cl.name as class_name,
+                    a.id as assessment_id,
+                    a.type as type,
+                    a.title as quiz_name,
                     COALESCE(c2.code, 'N/A') as course_code,
                     g.final_score as score,
                     CASE 
@@ -1034,6 +1039,10 @@ export const adminService = {
                 ${whereClause}
                 ORDER BY u.full_name ASC NULLS LAST
             `);
+            console.log('[Reports] detailRows count:', detailRows.length);
+            if (detailRows.length > 0) {
+                console.log('[Reports] Sample row keys:', Object.keys(detailRows[0]).join(', '));
+            }
             detailedData = detailRows;
         } catch (e) {
             console.log('[Reports] Lỗi truy vấn chi tiết:', e.message);
@@ -1286,11 +1295,11 @@ export const adminService = {
         const classNamesLower = classNames.map(name => name.toLowerCase());
         const teacherEmailsLower = teacherEmails.map(email => email.toLowerCase());
 
-        const classes = await Class.findAll({ 
+        const classes = await Class.findAll({
             where: Sequelize.where(
-                Sequelize.fn('LOWER', Sequelize.col('name')), 
+                Sequelize.fn('LOWER', Sequelize.col('name')),
                 { [Sequelize.Op.in]: classNamesLower }
-            ) 
+            )
         });
         const teachers = await User.findAll({
             where: {
