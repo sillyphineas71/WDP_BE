@@ -873,7 +873,7 @@ export const adminService = {
         };
     },
 
-    getReportData: async (semester, courseCode, dateRange, classId) => {
+    getReportData: async (semester, courseCode, dateRange, classId, startDate, endDate) => {
         // UC Exception E2: Phạm vi truy xuất dữ liệu quá lớn
         // If "All Semesters" is selected AND "All Courses" is selected, it's too broad.
         // Also if Custom Range is selected and > 365 days (though currently custom range is not fully implemented in getReportData)
@@ -915,6 +915,20 @@ export const adminService = {
         if (classWhere.semester) whereClause += ` AND cl.semester = '${classWhere.semester.replace(/'/g, "''")}'`;
         if (classWhere.course_id) whereClause += ` AND cl.course_id = '${classWhere.course_id}'`;
         if (classWhere.id) whereClause += ` AND cl.id = '${classWhere.id}'`;
+
+        // Date range filtering
+        const isValidDate = (d) => d && d !== 'undefined' && d !== '';
+        
+        if (dateRange === 'Custom Range') {
+            if (isValidDate(startDate)) whereClause += ` AND s.submitted_at >= '${startDate} 00:00:00'`;
+            if (isValidDate(endDate)) whereClause += ` AND s.submitted_at <= '${endDate} 23:59:59'`;
+        } else if (dateRange === 'This Week') {
+            whereClause += ` AND s.submitted_at >= CURRENT_DATE - INTERVAL '7 days'`;
+        } else if (dateRange === 'This Month') {
+            whereClause += ` AND s.submitted_at >= date_trunc('month', CURRENT_DATE)`;
+        } else if (dateRange === 'This Semester') {
+            whereClause += ` AND s.submitted_at >= CURRENT_DATE - INTERVAL '4 months'`;
+        }
 
         let A = 0, B = 0, C = 0, D = 0, F = 0;
         try {
@@ -977,16 +991,30 @@ export const adminService = {
         // Average grade letter
         let avgGrade = 'N/A';
         try {
-            let sqlWhere = `WHERE g.final_score IS NOT NULL`;
-            if (classWhere.semester) sqlWhere += ` AND cl.semester = '${classWhere.semester.replace(/'/g, "''")}'`;
-            if (classWhere.course_id) sqlWhere += ` AND cl.course_id = '${classWhere.course_id}'`;
+            let sqlWhereAvg = `WHERE g.final_score IS NOT NULL`;
+            if (classWhere.semester) sqlWhereAvg += ` AND cl.semester = '${classWhere.semester.replace(/'/g, "''")}'`;
+            if (classWhere.course_id) sqlWhereAvg += ` AND cl.course_id = '${classWhere.course_id}'`;
+            if (classWhere.id) sqlWhereAvg += ` AND cl.id = '${classWhere.id}'`;
+
+            // Add date filters to avg calculation
+            if (dateRange === 'Custom Range') {
+                if (isValidDate(startDate)) sqlWhereAvg += ` AND s.submitted_at >= '${startDate} 00:00:00'`;
+                if (isValidDate(endDate)) sqlWhereAvg += ` AND s.submitted_at <= '${endDate} 23:59:59'`;
+            } else if (dateRange === 'This Week') {
+                sqlWhereAvg += ` AND s.submitted_at >= CURRENT_DATE - INTERVAL '7 days'`;
+            } else if (dateRange === 'This Month') {
+                sqlWhereAvg += ` AND s.submitted_at >= date_trunc('month', CURRENT_DATE)`;
+            } else if (dateRange === 'This Semester') {
+                sqlWhereAvg += ` AND s.submitted_at >= CURRENT_DATE - INTERVAL '4 months'`;
+            }
+
             const [avgRows] = await Grade.sequelize.query(`
                 SELECT AVG(g.final_score::numeric) as avg_score
                 FROM grades g
                 JOIN submissions s ON g.submission_id = s.id
                 JOIN assessments a ON s.assessment_id = a.id
                 JOIN classes cl ON a.class_id = cl.id
-                ${sqlWhere}
+                ${sqlWhereAvg}
             `);
             const avg = parseFloat(avgRows[0]?.avg_score);
             if (!isNaN(avg)) {
@@ -1053,6 +1081,9 @@ export const adminService = {
             gradePercentageData,
             courseEnrollmentData,
             detailedData, // New detailed list
+            sqlDebug: whereClause,
+            dateRangeDebug: dateRange,
+            paramsDebug: { startDate, endDate, semester, courseCode, classId },
             summaryStats: {
                 avgGrade,
                 passRate,

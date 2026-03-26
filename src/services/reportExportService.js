@@ -29,7 +29,14 @@ export const reportExportService = {
         doc.text(`- Học kỳ: ${filters.semester || 'Tất cả'}`);
         doc.text(`- Môn học: ${filters.course || 'Tất cả'}`);
         doc.text(`- Lớp học: ${filters.className || 'Tất cả'}`);
-        doc.text(`- Khoảng thời gian: ${filters.dateRange || 'Mặc định'}`);
+        let dateLabel = filters.dateRange || 'Mặc định';
+        if (filters.dateRange === 'Custom Range') {
+            dateLabel = `Từ ${filters.startDate || '?'} đến ${filters.endDate || '?'}`;
+        } else if (filters.dateRange === 'This Week') dateLabel = 'Tuần này';
+        else if (filters.dateRange === 'This Month') dateLabel = 'Tháng này';
+        else if (filters.dateRange === 'This Semester') dateLabel = 'Học kỳ này';
+
+        doc.text(`- Khoảng thời gian: ${dateLabel}`);
         doc.moveDown();
 
         if (isTeacherReport && teacherActivityData) {
