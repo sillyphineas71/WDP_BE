@@ -177,7 +177,7 @@ export const adminService = {
                 { model: User, as: "teacher", attributes: ["id", "full_name", "email"] },
                 {
                     model: Enrollment, as: "enrollments",
-                    include: [{ model: User, as: "student", attributes: ["full_name", "email"] }]
+                    include: [{ model: User, as: "student", attributes: ["id", "full_name", "email"] }]
                 },
                 {
                     model: ClassSession,
@@ -400,6 +400,76 @@ export const adminService = {
             }
         }
         return { successCount, failures };
+    },
+
+    upgradeClass: async (oldClassId, data) => {
+        const { name, semester, start_date, end_date, teacher_id, student_ids, course_id } = data;
+        
+        if (!name || !semester || !start_date || !end_date) {
+            throw new ConflictError("Thiếu thông tin bắt buộc (Tên lớp, Học kỳ, Ngày khai giảng, Ngày bế giảng).");
+        }
+        
+        if (new Date(end_date) <= new Date(start_date)) {
+            throw new ConflictError("Ngày kết thúc phải diễn ra sau ngày khai giảng.");
+        }
+
+        const oldClass = await Class.findByPk(oldClassId);
+        if (!oldClass) throw new NotFoundError("Lớp học cũ không tồn tại: " + oldClassId);
+
+        const gradeMatch = oldClass.name.match(/\d+/);
+        if (gradeMatch && parseInt(gradeMatch[0], 10) >= 12) {
+            throw new ConflictError("Lớp 12 là khối cuối cấp, không thể thực hiện lên lớp tự động.");
+        }
+
+        const existing = await Class.findOne({
+            where: {
+                name: name,
+                course_id: oldClass.course_id,
+                semester: semester
+            }
+        });
+        if (existing) throw new ConflictError(`Lớp ${name} đã tồn tại cho môn học này trong học kỳ ${semester}.`);
+
+        let initialStatus = "active";
+        if (new Date(start_date) > new Date()) {
+            initialStatus = "upcoming";
+        }
+
+        const newCourseId = course_id || oldClass.course_id;
+
+        const newClass = await Class.create({
+            course_id: newCourseId,
+            name: name,
+            semester: semester,
+            max_capacity: oldClass.max_capacity,
+            start_date: start_date,
+            end_date: end_date,
+            teacher_id: teacher_id || null,
+            status: initialStatus
+        });
+
+        try {
+            if (student_ids && Array.isArray(student_ids) && student_ids.length > 0) {
+                // Ensure no undefined or null user ids
+                const validIds = student_ids.filter(id => id);
+                if (validIds.length > 0) {
+                    const enrollmentsToCreate = validIds.map(userId => ({
+                        class_id: newClass.id,
+                        user_id: userId,
+                        status: "active"
+                    }));
+                    await Enrollment.bulkCreate(enrollmentsToCreate);
+                }
+            }
+
+            await oldClass.update({ status: "closed" });
+        } catch (error) {
+            // Delete the class if any subsequent step fails
+            await newClass.destroy({ force: true });
+            throw error;
+        }
+
+        return newClass;
     },
 
     // --- UC_ADM_12: PHÂN CÔNG GIÁO VIÊN ---
