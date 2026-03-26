@@ -2,9 +2,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Material, ClassStreamPost } from "../models/index.js";
 import { AppError } from "../errors/AppError.js";
 import mammoth from "mammoth";
-import { createRequire } from "module";
-const require = createRequire(import.meta.url);
-const pdf = require("pdf-parse");
+import { PDFParse } from "pdf-parse";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
@@ -38,7 +36,7 @@ export const getClassChatResponse = async ({ classId, message, history = [] }) =
         let chatHistoryParts = []; // To store inlineData nodes for images
         
         let materialsText = "";
-        let contentCap = 10000; // Character cap for all extracted content to avoid huge prompts
+        let contentCap = 100000; // Character cap for all extracted content to allow more context
 
         if (materials.length > 0) {
             materialsText += "\n[Tài liệu học tập tải lên bởi Giáo viên]:\n";
@@ -64,12 +62,13 @@ export const getClassChatResponse = async ({ classId, message, history = [] }) =
                         if (m.type === "doc" || fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
                             const result = await mammoth.extractRawText({ buffer: buffer });
                             if (result.value) {
-                                materialsText += `   -> Nội dung văn bản chi tiết:\n"""\n${result.value.substring(0, 3000)}\n"""\n`;
+                                materialsText += `   -> Nội dung văn bản chi tiết:\n"""\n${result.value.substring(0, 15000)}\n"""\n`;
                             }
                         } else if (m.type === "pdf" || fileName.endsWith('.pdf')) {
-                            const data = await pdf(buffer);
-                            if (data.text) {
-                                materialsText += `   -> Nội dung văn bản chi tiết:\n"""\n${data.text.substring(0, 3000)}\n"""\n`;
+                            const parser = new PDFParse({ data: buffer });
+                            const result = await parser.getText();
+                            if (result.text) {
+                                materialsText += `   -> Nội dung văn bản chi tiết:\n"""\n${result.text.substring(0, 15000)}\n"""\n`;
                             }
                         } else if (m.type === "image" || fileName.endsWith('.png') || fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
                             let mimeType = fileName.endsWith('.png') ? "image/png" : "image/jpeg";

@@ -264,6 +264,25 @@ export const adminService = {
                 continue;
             }
 
+            // Normalize " năm học " to " - " for consistency
+            const normalizedSemester = String(semester).replace(/\s+năm học\s+/i, " - ").trim();
+
+            const semesterPattern = /^Học kỳ [1-3] - (\d{4})-(\d{4})$/i;
+            const yearMatch = normalizedSemester.match(semesterPattern);
+
+            if (!yearMatch) {
+                invalidRows.push({ ...row, rowNumber: i + 1, reason: "Định dạng Học kỳ/Năm học không hợp lệ (VD chuẩn: Học kỳ 1 - 2026-2027)" });
+                continue;
+            }
+
+            const startYear = parseInt(yearMatch[1]);
+            const endYear = parseInt(yearMatch[2]);
+
+            if (endYear !== startYear + 1) {
+                invalidRows.push({ ...row, rowNumber: i + 1, reason: `Năm học không hợp lệ. Năm kết thúc (${endYear}) phải sau năm bắt đầu (${startYear}) đúng 1 năm.` });
+                continue;
+            }
+
             // Check Dates
             const start = new Date(start_date);
             const end = new Date(end_date);
@@ -280,19 +299,13 @@ export const adminService = {
                 continue;
             }
 
-            // Academic Year Validation
-            const yearMatch = String(semester || "").match(/(\d{4})-(\d{4})/);
-            if (yearMatch) {
-                const startYear = parseInt(yearMatch[1]);
-                const endYear = parseInt(yearMatch[2]);
-                if (start.getFullYear() < startYear) {
-                    invalidRows.push({ ...row, rowNumber: i + 1, reason: `Ngày bắt đầu (${start.getFullYear()}) phải từ năm ${startYear} trở đi.` });
-                    continue;
-                }
-                if (end.getFullYear() > endYear) {
-                    invalidRows.push({ ...row, rowNumber: i + 1, reason: `Ngày kết thúc (${end.getFullYear()}) phải muộn nhất năm ${endYear}.` });
-                    continue;
-                }
+            if (start.getFullYear() < startYear) {
+                invalidRows.push({ ...row, rowNumber: i + 1, reason: `Ngày bắt đầu (${start.getFullYear()}) phải từ năm ${startYear} trở đi.` });
+                continue;
+            }
+            if (end.getFullYear() > endYear) {
+                invalidRows.push({ ...row, rowNumber: i + 1, reason: `Ngày kết thúc (${end.getFullYear()}) phải muộn nhất năm ${endYear}.` });
+                continue;
             }
 
             // Check Course exists (Case-insensitive)
@@ -313,7 +326,7 @@ export const adminService = {
                     course_id: course.id,
                     [Sequelize.Op.and]: [
                         Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('name')), name.toLowerCase()),
-                        Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('semester')), semester.toLowerCase())
+                        Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('semester')), normalizedSemester.toLowerCase())
                     ]
                 }
             });
@@ -324,7 +337,7 @@ export const adminService = {
             }
 
             // Check unique in file
-            const classKey = `${course_code}_${semester}_${name}`;
+            const classKey = `${course_code}_${normalizedSemester}_${name}`;
             if (classUniquenessCheck.has(classKey)) {
                 invalidRows.push({ ...row, rowNumber: i + 1, reason: `Bị trùng lặp thông tin lớp "${name}" ngay trong file Excel này.` });
                 continue;
@@ -352,7 +365,7 @@ export const adminService = {
                 course_id: course.id,
                 course_code,
                 name,
-                semester,
+                semester: normalizedSemester,
                 start_date: start_date,
                 end_date: end_date,
                 max_capacity: Number(max_capacity) || 30,
@@ -407,6 +420,8 @@ export const adminService = {
         const oldClass = await Class.findByPk(oldClassId);
         if (!oldClass) throw new NotFoundError("Lớp học cũ không tồn tại: " + oldClassId);
 
+        const newCourseId = course_id || oldClass.course_id;
+
         const gradeMatch = oldClass.name.match(/\d+/);
         if (gradeMatch && parseInt(gradeMatch[0], 10) >= 12) {
             throw new ConflictError("Lớp 12 là khối cuối cấp, không thể thực hiện lên lớp tự động.");
@@ -415,7 +430,7 @@ export const adminService = {
         const existing = await Class.findOne({
             where: {
                 name: name,
-                course_id: oldClass.course_id,
+                course_id: newCourseId,
                 semester: semester
             }
         });
@@ -425,8 +440,6 @@ export const adminService = {
         if (new Date(start_date) > new Date()) {
             initialStatus = "upcoming";
         }
-
-        const newCourseId = course_id || oldClass.course_id;
 
         const newClass = await Class.create({
             course_id: newCourseId,
@@ -441,15 +454,16 @@ export const adminService = {
 
         try {
             if (student_ids && Array.isArray(student_ids) && student_ids.length > 0) {
-                // Ensure no undefined or null user ids
-                const validIds = student_ids.filter(id => id);
-                if (validIds.length > 0) {
-                    const enrollmentsToCreate = validIds.map(userId => ({
+                // Ensure no undefined or null user ids and DEDUPLICATE
+                const uniqueIds = [...new Set(student_ids.filter(id => id))];
+                if (uniqueIds.length > 0) {
+                    const enrollmentsToCreate = uniqueIds.map(userId => ({
                         class_id: newClass.id,
                         user_id: userId,
                         status: "active"
                     }));
-                    await Enrollment.bulkCreate(enrollmentsToCreate);
+                    // Use individualHooks to ensure defaultValue function for UUID is triggered
+                    await Enrollment.bulkCreate(enrollmentsToCreate, { individualHooks: true });
                 }
             }
 
