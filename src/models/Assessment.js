@@ -2,7 +2,7 @@
 import { DataTypes, Model } from "sequelize";
 import { v4 as uuidv4 } from "uuid";
 
-export class Assessment extends Model {}
+export class Assessment extends Model { }
 
 export function initAssessment(sequelize) {
   Assessment.init(
@@ -33,27 +33,25 @@ export function initAssessment(sequelize) {
         allowNull: false,
         defaultValue: false,
       },
-      
+
       // === CÁC TRƯỜNG MỚI ĐƯỢC THÊM CHO UC_TEA_10 ===
-      allow_from: { 
-        type: DataTypes.DATE 
+      allow_from: {
+        type: DataTypes.DATE
       }, // Thời gian bắt đầu nhận bài
-      cutoff_at: { 
-        type: DataTypes.DATE 
+      cutoff_at: {
+        type: DataTypes.DATE
       },  // Thời gian đóng cổng nộp
-      max_score: { 
-        type: DataTypes.DECIMAL(6, 2), 
-        defaultValue: 100 
+      max_score: {
+        type: DataTypes.DECIMAL(6, 2),
+        defaultValue: 100
       }, // Thang điểm tối đa (Ví dụ: 10, 100)
-      settings_json: { 
-        type: DataTypes.JSONB 
+      settings_json: {
+        type: DataTypes.JSONB
       }, // Lưu cấu hình nộp bài (online_text, file_submission, max_files...)
       shared_from: {
         type: DataTypes.UUID,
         allowNull: true,
-      }, // ID của bài tập gốc (nếu là bài tập được chia sẻ)
-      // =============================================
-
+      },
       created_at: {
         type: DataTypes.DATE,
         allowNull: false,
