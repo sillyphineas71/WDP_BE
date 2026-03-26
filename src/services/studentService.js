@@ -1099,6 +1099,8 @@ export const studentService = {
 
         return {
             attemptId: attempt.id,
+            assessmentId: attempt.assessment_id,
+            classId: quiz.class_id,
             status: attempt.status,
             totalQuestions: items.length,
             answeredCount,
@@ -1132,7 +1134,11 @@ export const studentService = {
                 cheatDetected: cheat_detected
             });
 
-            return result;
+            return {
+                ...result,
+                assessmentId: attempt.assessment_id,
+                classId: quiz.class_id
+            };
         });
     },
 

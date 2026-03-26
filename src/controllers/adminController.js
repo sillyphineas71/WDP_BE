@@ -81,6 +81,12 @@ export const adminController = {
             res.status(200).json({ success: true, data });
         } catch (error) { next(error); }
     },
+    upgradeClass: async (req, res, next) => {
+        try {
+            const data = await adminService.upgradeClass(req.params.id, req.body);
+            res.status(201).json({ success: true, message: "Lên lớp thành công", data });
+        } catch (error) { next(error); }
+    },
     validateClassImport: async (req, res, next) => {
         try {
             const { rows } = req.body;
@@ -120,6 +126,12 @@ export const adminController = {
         try {
             const data = await adminService.editSessions(req.params.id, req.body);
             res.status(200).json({ success: true, message: "Class sessions updated successfully", data });
+        } catch (error) { next(error); }
+    },
+    updateSession: async (req, res, next) => {
+        try {
+            const data = await adminService.updateSession(req.params.id, req.params.sessionId, req.body);
+            res.status(200).json({ success: true, message: "Class session updated successfully", data });
         } catch (error) { next(error); }
     },
     deleteSessions: async (req, res, next) => {

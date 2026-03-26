@@ -2177,5 +2177,138 @@ CHÚ Ý: Một câu hỏi có thể có 1 hoặc nhiều đáp án đúng (is_co
         console.error("Lỗi Gemini AI:", error);
         throw new AppError("AI không phản hồi hoặc tài liệu không thể đọc được. (E2)", 500);
     }
+},
+
+shareAssessment: async (teacherId, assessmentId, targetClassIds) => {
+    if (!Array.isArray(targetClassIds) || targetClassIds.length === 0) {
+        throw new ValidationError("Vui lòng chọn ít nhất một lớp để chia sẻ.");
+    }
+
+    const original = await Assessment.findOne({
+        where: { id: assessmentId },
+        include: [
+            { model: QuizQuestion, as: 'questions', include: [{ model: QuizOption, as: 'options' }] },
+            { model: AssessmentFile, as: 'files' }
+        ]
+    });
+
+    if (!original) throw new NotFoundError("Không tìm thấy bài tập gốc.");
+    
+    // Kiểm tra quyền sở hữu
+    if (String(original.created_by) !== String(teacherId)) {
+        throw new AppError("Bạn không có quyền chia sẻ bài tập này.", 403);
+    }
+
+    // Constraint: Không cho phép chia sẻ đề đã đóng
+    if (original.status === 'closed') {
+        throw new AppError("Không thể chia sẻ bài tập đã đóng.", 400);
+    }
+
+    const results = [];
+
+    for (const targetClassId of targetClassIds) {
+        // Kiểm tra lớp đích có thuộc về giáo viên không
+        const targetClass = await Class.findOne({ where: { id: targetClassId, teacher_id: teacherId } });
+        if (!targetClass) {
+            results.push({ classId: targetClassId, success: false, error: "Lớp học không tồn tại hoặc bạn không quản lý lớp này." });
+            continue;
+        }
+
+        // Constraint: Kiểm tra xem đã chia sẻ tới lớp này chưa (dựa trên shared_from)
+        try {
+            const alreadyShared = await Assessment.findOne({
+                where: {
+                    class_id: targetClassId,
+                    shared_from: original.id
+                }
+            });
+
+            if (alreadyShared) {
+                results.push({ classId: targetClassId, className: targetClass.name, success: false, error: "Đã được chia sẻ tới lớp này trước đó." });
+                continue;
+            }
+        } catch (error) {
+            console.error("Lỗi kiểm tra trùng lặp (có thể do thiếu cột shared_from):", error);
+            // Nếu lỗi do thiếu cột, ta cứ để nó rơi vào try-catch chung bên dưới
+        }
+
+        try {
+            const shared = await sequelize.transaction(async (t) => {
+                // 1. Clone Assessment
+                const newAssessment = await Assessment.create({
+                    class_id: targetClassId,
+                    created_by: teacherId,
+                    type: original.type,
+                    title: original.title + " (Bản sao)",
+                    instructions: original.instructions,
+                    due_at: original.due_at,
+                    allow_from: original.allow_from,
+                    cutoff_at: original.cutoff_at,
+                    time_limit_minutes: original.time_limit_minutes,
+                    attempt_limit: original.attempt_limit,
+                    max_score: original.max_score,
+                    settings_json: original.settings_json,
+                    shared_from: original.id, // Lưu ID gốc
+                    status: 'draft', 
+                    is_published: false
+                }, { transaction: t });
+
+                // 2. Clone Quiz Questions & Options
+                if (original.type === 'QUIZ' && original.questions) {
+                    for (const q of original.questions) {
+                        const newQuestion = await QuizQuestion.create({
+                            assessment_id: newAssessment.id,
+                            question_text: q.question_text,
+                            question_type: q.question_type,
+                            points: q.points,
+                            display_order: q.display_order
+                        }, { transaction: t });
+
+                        if (q.options && q.options.length > 0) {
+                            const optionData = q.options.map(o => ({
+                                question_id: newQuestion.id,
+                                option_text: o.option_text,
+                                is_correct: o.is_correct,
+                                display_order: o.display_order
+                            }));
+                            await QuizOption.bulkCreate(optionData, { transaction: t });
+                        }
+                    }
+                }
+
+                // 3. Clone Assessment Files
+                if (original.type === 'ESSAY' && original.files) {
+                    const fileData = original.files.map(f => ({
+                        assessment_id: newAssessment.id,
+                        file_url: f.file_url,
+                        original_name: f.original_name,
+                        mime_type: f.mime_type,
+                        uploaded_by: teacherId
+                    }));
+                    await AssessmentFile.bulkCreate(fileData, { transaction: t });
+                }
+
+                return newAssessment;
+            });
+            results.push({ classId: targetClassId, className: targetClass.name, success: true, assessmentId: shared.id });
+        } catch (err) {
+            console.error(`[ShareError] Class ${targetClassId}:`, err);
+            results.push({ classId: targetClassId, className: targetClass.name, success: false, error: err.message });
+        }
+    }
+
+    return results;
+},
+
+getShareStatus: async (teacherId, assessmentId) => {
+    const assessment = await Assessment.findOne({ where: { id: assessmentId, created_by: teacherId } });
+    if (!assessment) throw new NotFoundError("Không tìm thấy bài tập.");
+
+    const shared = await Assessment.findAll({
+        where: { shared_from: assessmentId },
+        attributes: ['class_id']
+    });
+
+    return shared.map(s => s.class_id);
 }
 };

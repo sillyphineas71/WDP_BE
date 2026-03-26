@@ -30,7 +30,9 @@ import {
   generateAiQuiz,
   updateQuizStatus,
   getQuizDetail,
-  updateQuiz
+  updateQuiz,
+  shareAssessment,
+  getShareStatus
 } from "../controllers/teacherController.js";
 import { isAuth, authorize } from "../middleware/isAuth.js";
 import { USER_ROLES } from "../constants/roles.js";
@@ -131,6 +133,10 @@ router.put("/classes/:classId/assessments/essay/:assessmentId", isAuth, authoriz
 // API xóa bài tập
 router.delete("/classes/:classId/assessments/:assessmentId", isAuth, authorize(USER_ROLES.TEACHER), deleteAssessment);
 
+// API chia sẻ bài tập sang lớp khác
+router.post("/assessments/:assessmentId/share", isAuth, authorize(USER_ROLES.TEACHER), shareAssessment);
+router.get("/assessments/:assessmentId/share-status", isAuth, authorize(USER_ROLES.TEACHER), getShareStatus);
+
 // Route lấy danh sách bài nộp của một bài tập cụ thể
 router.get("/assessments/:assessmentId/submissions", isAuth, authorize(USER_ROLES.TEACHER), getSubmissionsByAssessment);
 router.get("/classes/:classId/students", isAuth, authorize(USER_ROLES.TEACHER), getStudentsByClass);
@@ -199,6 +205,9 @@ router.post(
 
 // Chỉnh sửa tài liệu (đổi tên, mô tả, URL)
 router.put("/materials/:materialId", materialCtrl.updateMaterial);
+
+// Chia sẻ tài liệu sang các lớp khác mà giáo viên đang dạy
+router.post("/materials/:materialId/share", materialCtrl.shareMaterial);
 
 // Bật/tắt hiển thị tài liệu
 router.patch("/materials/:materialId/visibility", materialCtrl.toggleVisibility);
