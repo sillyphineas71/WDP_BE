@@ -22,6 +22,7 @@ import { initNotification, Notification } from "./Notification.js";
 import { initClassStreamPost, ClassStreamPost } from "./ClassStreamPost.js";
 import { initClassStreamComment, ClassStreamComment } from "./ClassStreamComment.js";
 import { initClassStreamAttachment, ClassStreamAttachment } from "./ClassStreamAttachment.js";
+import { initCoursePublicMaterial, CoursePublicMaterial } from "./CoursePublicMaterial.js";
 import sequelize from "../config/database.js";
 
 export function initModels(sequelize) {
@@ -49,6 +50,7 @@ export function initModels(sequelize) {
   initClassStreamPost(sequelize);
   initClassStreamComment(sequelize);
   initClassStreamAttachment(sequelize);
+  initCoursePublicMaterial(sequelize);
 
   // 2. Định nghĩa quan hệ (Associations)
 
@@ -71,6 +73,9 @@ export function initModels(sequelize) {
   // Course & Class
   Course.hasMany(Class, { foreignKey: "course_id", as: "classes" });
   Class.belongsTo(Course, { foreignKey: "course_id", as: "course" });
+
+  Course.hasMany(CoursePublicMaterial, { foreignKey: "course_id", as: "publicMaterials" });
+  CoursePublicMaterial.belongsTo(Course, { foreignKey: "course_id", as: "course" });
 
   // Class & Sub-resources
   Class.hasMany(Enrollment, { foreignKey: "class_id", as: "enrollments" });
@@ -134,6 +139,9 @@ export function initModels(sequelize) {
   User.hasMany(Notification, { foreignKey: "user_id", as: "notifications" });
   Notification.belongsTo(User, { foreignKey: "user_id", as: "user" });
 
+  User.hasMany(CoursePublicMaterial, { foreignKey: "uploaded_by", as: "uploadedPublicMaterials" });
+  CoursePublicMaterial.belongsTo(User, { foreignKey: "uploaded_by", as: "uploader" });
+
   // Class Stream Posts
 Class.hasMany(ClassStreamPost, { foreignKey: "class_id", as: "streamPosts" });
 ClassStreamPost.belongsTo(Class, { foreignKey: "class_id", as: "class" });
@@ -165,7 +173,7 @@ ClassStreamAttachment.belongsTo(User, { foreignKey: "uploaded_by", as: "uploader
     Role, User, PasswordResetToken, Course, Class, Enrollment,
     ClassSession, AttendanceRecord, Material, Assessment, AssessmentFile,
     QuizQuestion, QuizOption, ImportJob, ImportRow, Submission,
-    SubmissionAnswer, SubmissionFile, Grade, Notification,
+    SubmissionAnswer, SubmissionFile, Grade, Notification, CoursePublicMaterial,
   };
 }
 
@@ -173,6 +181,6 @@ export {
   sequelize, Role, User, PasswordResetToken, Course, Class, Enrollment,
   ClassSession, AttendanceRecord, Material, Assessment, AssessmentFile,
   QuizQuestion, QuizOption, ImportJob, ImportRow, Submission,
-  SubmissionAnswer, SubmissionFile, Grade, Notification,
+  SubmissionAnswer, SubmissionFile, Grade, Notification, CoursePublicMaterial,
   ClassStreamPost, ClassStreamComment, ClassStreamAttachment,
 };

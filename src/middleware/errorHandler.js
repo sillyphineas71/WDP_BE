@@ -10,6 +10,7 @@ export const errorHandler = (err, req, res, next) => {
       field: detail.path.join("."),
       message: detail.message,
     }));
+
     return res.status(400).json(
       errorResponse("Validation failed", 400, {
         validationErrors,
@@ -20,9 +21,11 @@ export const errorHandler = (err, req, res, next) => {
   // Operational errors or errors with explicit status
   if (err.isOperational === true || err.status || err.statusCode) {
     const status = err.status || err.statusCode || 500;
-    return res
-      .status(status)
-      .json(errorResponse(err.message, status));
+    const response = errorResponse(err.message, status);
+
+    if (err.code) response.code = err.code;
+
+    return res.status(status).json(response);
   }
 
   // Programming or unknown errors

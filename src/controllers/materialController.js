@@ -63,6 +63,21 @@ export const updateMaterial = async (req, res, next) => {
 };
 
 /**
+ * POST /api/teacher/materials/:materialId/share
+ * Chia sẻ tài liệu sang các lớp khác mà giáo viên đang dạy.
+ */
+export const shareMaterial = async (req, res, next) => {
+  try {
+    const teacherId = req.user.id;
+    const { materialId } = req.params;
+    const data = await service.shareMaterial(teacherId, materialId, req.body);
+    res.status(201).json({ message: "Chia sẻ tài liệu thành công.", data });
+  } catch (e) {
+    next(e);
+  }
+};
+
+/**
  * PATCH /api/teacher/materials/:materialId/visibility
  * Bật/tắt hiển thị tài liệu.
  */
