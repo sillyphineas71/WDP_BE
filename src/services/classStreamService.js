@@ -2,6 +2,10 @@ import { Op, fn, col } from "sequelize";
 import {
   sequelize,
   Class,
+  Assessment,
+  ClassSession,
+  Grade,
+  Submission,
   Enrollment,
   Notification,
   Role,
@@ -1580,6 +1584,72 @@ export const resolveNotificationTargetForUser = async (userId, notificationId) =
     };
   }
 
+  if (notification.ref_type === "SESSION") {
+    return {
+      notification,
+      target: {
+        type: "session",
+        ref_id: notification.ref_id,
+        route: `/schedule`,
+      },
+    };
+  }
+
+  if (notification.ref_type === "ASSESSMENT") {
+    const assessment = await Assessment.findOne({
+      where: { id: notification.ref_id },
+      attributes: ["id", "class_id"],
+    });
+
+    if (assessment) {
+      return {
+        notification,
+        target: {
+          type: "assessment",
+          class_id: assessment.class_id,
+          assessment_id: assessment.id,
+          route: `/classes/${assessment.class_id}/assessments/${assessment.id}`,
+        },
+      };
+    }
+  }
+
+  if (notification.ref_type === "GRADE") {
+    const grade = await Grade.findOne({
+      where: { id: notification.ref_id },
+      attributes: ["id", "submission_id"],
+      include: [
+        {
+          model: Submission,
+          as: "submission",
+          attributes: ["id", "assessment_id", "student_id"],
+          include: [
+            {
+              model: Assessment,
+              as: "assessment",
+              attributes: ["id", "class_id"],
+            },
+          ],
+        },
+      ],
+    });
+
+    if (grade?.submission?.assessment) {
+      const { class_id } = grade.submission.assessment;
+      const { assessment_id } = grade.submission;
+      return {
+        notification,
+        target: {
+          type: "grade",
+          class_id,
+          assessment_id,
+          submission_id: grade.submission_id,
+          route: `/classes/${class_id}/grades`,
+        },
+      };
+    }
+  }
+
   return {
     notification,
     target: notification.ref_id
@@ -1590,4 +1660,3 @@ export const resolveNotificationTargetForUser = async (userId, notificationId) =
       : null,
   };
 };
-
