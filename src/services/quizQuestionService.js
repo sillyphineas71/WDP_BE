@@ -145,34 +145,53 @@ export const quizQuestionService = {
         if (!apiKey) throw new AppError("Chưa cấu hình GEMINI_API_KEY.", 500);
 
         let extractedText = "";
+        let inlineDataPart = null;
+
         if (file) {
             try {
-                if (file.mimetype === "application/pdf") {
-                    const pdfData = await pdfParse(file.buffer);
-                    extractedText = pdfData.text;
+                // If it's a PDF or Image, we prefer sending as inlineData directly to Gemini
+                if (file.mimetype === "application/pdf" || file.mimetype.startsWith("image/")) {
+                    inlineDataPart = {
+                        inlineData: {
+                            data: file.buffer.toString("base64"),
+                            mimeType: file.mimetype
+                        }
+                    };
+                    // Optionally extract text as fallback or additional context for PDF
+                    if (file.mimetype === "application/pdf") {
+                        try {
+                            const pdfData = await pdfParse(file.buffer);
+                            extractedText = pdfData.text;
+                        } catch (e) {
+                            console.warn("Failed to extract text from PDF, will rely on vision/multimodal:", e);
+                        }
+                    }
                 } else if (file.mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
                     const docxData = await mammoth.extractRawText({ buffer: file.buffer });
                     extractedText = docxData.value;
-                } else if (file.mimetype === "text/plain") {
+                } else if (file.mimetype === "text/plain" || file.mimetype === "application/msword") {
                     extractedText = file.buffer.toString("utf-8");
                 } else {
-                    throw new AppError("Định dạng file không hỗ trợ. Chỉ hỗ trợ PDF, DOCX, TXT.", 400);
+                    // Try to treat unknown types as text if they are small enough?
+                    // For now, stick to the allowed types but be more lenient
+                    extractedText = file.buffer.toString("utf-8");
                 }
             } catch (err) {
                 console.error("Lỗi đọc file AI:", err);
                 if (err instanceof AppError) throw err;
-                throw new AppError("Không thể đọc nội dung file.", 500);
+                // Don't throw if we have at least partial success, but here it's fatal
+                throw new AppError("Không thể đọc nội dung file. Vui lòng kiểm tra định dạng.", 500);
             }
         }
 
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-flash-lite",
+            model: "gemini-1.5-flash", // Use 1.5-flash for better multimodal support
             generationConfig: { responseMimeType: "application/json" },
         });
 
         const systemPrompt = `Bạn là một trợ lý giáo dục chuyên soạn đề thi trắc nghiệm.
-${extractedText ? `DỰA VÀO TÀI LIỆU SAU ĐÂY:\n"""\n${extractedText.substring(0, 80000)}\n"""\n\n` : ""}Yêu cầu: ${prompt}
+${extractedText ? `DỰA VÀO TÀI LIỆU VĂN BẢN SAU ĐÂY:\n"""\n${extractedText.substring(0, 80000)}\n"""\n\n` : ""}Yêu cầu người dùng: ${prompt}
 Bài thi: "${assessment.title}"
 
 HÃY TRẢ VỀ KẾT QUẢ DƯỚI DẠNG JSON ARRAY, mỗi phần tử gồm:
@@ -194,7 +213,12 @@ CHỈ trả về JSON array, không giải thích thêm.
 Số lượng câu hỏi theo yêu cầu, nếu không nêu rõ thì tạo 5 câu.`;
 
         try {
-            const result = await model.generateContent(systemPrompt);
+            const promptParts = [systemPrompt];
+            if (inlineDataPart) {
+                promptParts.push(inlineDataPart);
+            }
+
+            const result = await model.generateContent(promptParts);
             const responseText = result.response.text();
             const questions = JSON.parse(responseText);
 
@@ -213,7 +237,7 @@ Số lượng câu hỏi theo yêu cầu, nếu không nêu rõ thì tạo 5 câ
             }));
         } catch (error) {
             console.error("AI Generation Error:", error);
-            throw new AppError("AI không phản hồi đúng định dạng. Vui lòng thử lại.", 500);
+            throw new AppError("AI không phản hồi đúng định dạng hoặc có lỗi kỹ thuật. Vui lòng thử lại với tài liệu khác hoặc prompt khác.", 500);
         }
     },
 
