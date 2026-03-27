@@ -83,6 +83,7 @@ export const processEventNotification = async (payload) => {
   }
 
   const notificationsToCreate = [];
+  const socketPayloads = []; // Store user_id -> notifRecord for socket push after DB insert
 
   for (const user of users) {
     const personalizedBody = `Chao ${user.full_name},\n\n${body}\n\nTran trong,\nSmart Edu System`;
@@ -101,11 +102,7 @@ export const processEventNotification = async (payload) => {
         created_at: createdAt,
       };
       notificationsToCreate.push(notifRecord);
-
-      pushInAppNotification(user.id, {
-        ...notifRecord,
-        is_read: false,
-      });
+      socketPayloads.push({ userId: user.id, record: notifRecord });
     }
 
     if (selectedChannels.includes("email") && user.email) {
@@ -145,17 +142,35 @@ export const processEventNotification = async (payload) => {
     }
   }
 
+  // Save to DB first, then push via socket WITH the DB-generated IDs
   if (notificationsToCreate.length > 0) {
     try {
-      await Notification.bulkCreate(notificationsToCreate);
+      const createdRecords = await Notification.bulkCreate(notificationsToCreate, {
+        returning: true,
+      });
       console.log(
-        `[EventNoti] Created ${notificationsToCreate.length} in_app records for ${event_type}`,
+        `[EventNoti] Created ${createdRecords.length} in_app records for ${event_type}`,
       );
+
+      // Push via socket with proper IDs
+      createdRecords.forEach((record, index) => {
+        const payload = socketPayloads[index];
+        if (payload) {
+          pushInAppNotification(payload.userId, {
+            ...payload.record,
+            id: record.id,
+            is_read: false,
+          });
+        }
+      });
     } catch (error) {
       console.error(`[EventNoti] Failed to bulk insert notifications:`, error.message);
+      // Fallback: push via socket without IDs so user still sees notifications
+      socketPayloads.forEach(({ userId, record }) => {
+        pushInAppNotification(userId, { ...record, is_read: false });
+      });
     }
   }
 
   return { success: true, processedUsers: users.length, event: event_type };
 };
-
