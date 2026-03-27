@@ -254,7 +254,14 @@ export const teacherService = {
             throw new AppError("Forbidden: not owner teacher of this class", 403);
         }
 
-        return quiz;
+        const submissionCount = await Submission.count({
+            where: { assessment_id: quizId }
+        });
+
+        return {
+            ...quiz.toJSON(),
+            submissionCount
+        };
     },
 
     /**
@@ -271,6 +278,24 @@ export const teacherService = {
             where: { id: quizId, class_id: classId, type: "QUIZ" }
         });
         if (!quiz) throw new NotFoundError("Quiz not found");
+
+        // Check for existing submissions
+        const submissionCount = await Submission.count({
+            where: { assessment_id: quizId }
+        });
+
+        if (submissionCount > 0) {
+            // If submissions exist, only allow updating non-critical fields
+            // Block changing max_score
+            if (payload.max_score !== undefined && parseFloat(payload.max_score) !== parseFloat(quiz.max_score)) {
+                throw new ConflictError("Không thể thay đổi điểm tối đa của bài trắc nghiệm khi đã có học sinh làm bài.");
+            }
+            // Block changing attempt_limit
+            const newAttemptLimit = payload.attemptLimit === 0 ? null : (payload.attemptLimit ?? quiz.attempt_limit);
+            if (newAttemptLimit !== quiz.attempt_limit) {
+                throw new ConflictError("Không thể thay đổi số lần làm bài cho phép khi đã có học sinh làm bài.");
+            }
+        }
 
         let attemptLimit = payload.attemptLimit ?? quiz.attempt_limit;
         if (attemptLimit === 0) attemptLimit = null;
@@ -743,6 +768,18 @@ export const teacherService = {
         });
         if (!assessment) throw new NotFoundError("Không tìm thấy bài tập hoặc bạn không có quyền sửa.");
 
+        // Check for existing submissions
+        const submissionCount = await Submission.count({
+            where: { assessment_id: assessmentId }
+        });
+
+        if (submissionCount > 0) {
+            // For Essay, block changing max_score
+            if (data.max_score !== undefined && parseFloat(data.max_score) !== parseFloat(assessment.max_score)) {
+                throw new ConflictError("Không thể thay đổi điểm tối đa của bài tập khi đã có học sinh nộp bài.");
+            }
+        }
+
         return await sequelize.transaction(async (t) => {
             await assessment.update({
                 title: data.title,
@@ -767,13 +804,22 @@ export const teacherService = {
                 await AssessmentFile.bulkCreate(fileRecords, { transaction: t });
             }
 
-            return assessment;
+            return { ...assessment.toJSON(), submissionCount };
         });
     },
 
     deleteAssessment: async (teacherId, assessmentId) => {
         const assessment = await Assessment.findOne({ where: { id: assessmentId, created_by: teacherId } });
         if (!assessment) throw new NotFoundError("Bài tập không tồn tại.");
+
+        // Check for existing submissions
+        const submissionCount = await Submission.count({
+            where: { assessment_id: assessmentId }
+        });
+
+        if (submissionCount > 0) {
+            throw new ConflictError("Không thể xóa bài tập/trắc nghiệm đã có học sinh làm bài hoặc nộp bài.");
+        }
 
         return await assessment.destroy();
     },

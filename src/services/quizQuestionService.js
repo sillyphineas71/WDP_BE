@@ -4,7 +4,7 @@ import { QuizQuestion } from "../models/QuizQuestion.js";
 import { QuizOption } from "../models/QuizOption.js";
 import { Assessment } from "../models/Assessment.js";
 import { Class } from "../models/Class.js";
-import { sequelize } from "../models/index.js";
+import { Submission, sequelize } from "../models/index.js";
 import { NotFoundError, ValidationError, AppError } from "../errors/AppError.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createRequire } from "module";
@@ -55,6 +55,14 @@ export const quizQuestionService = {
         const assessment = await Assessment.findByPk(quizId);
         if (!assessment) throw new NotFoundError("Quiz không tồn tại.");
 
+        // Check for existing submissions
+        const submissionCount = await Submission.count({
+            where: { assessment_id: quizId }
+        });
+        if (submissionCount > 0) {
+            throw new ConflictError("Không thể thêm câu hỏi khi đã có học sinh làm bài hoặc nộp bài.");
+        }
+
         // Get next display_order
         const maxOrder = await QuizQuestion.max("display_order", { where: { assessment_id: quizId } });
         const nextOrder = (maxOrder || 0) + 1;
@@ -95,6 +103,14 @@ export const quizQuestionService = {
         const question = await QuizQuestion.findByPk(questionId);
         if (!question) throw new NotFoundError("Câu hỏi không tồn tại.");
 
+        // Check for existing submissions
+        const submissionCount = await Submission.count({
+            where: { assessment_id: question.assessment_id }
+        });
+        if (submissionCount > 0) {
+            throw new ConflictError("Không thể sửa câu hỏi khi đã có học sinh làm bài hoặc nộp bài.");
+        }
+
         return await sequelize.transaction(async (t) => {
             await question.update({
                 question_text: data.question_text,
@@ -126,6 +142,14 @@ export const quizQuestionService = {
     deleteQuestion: async (questionId) => {
         const question = await QuizQuestion.findByPk(questionId);
         if (!question) throw new NotFoundError("Câu hỏi không tồn tại.");
+
+        // Check for existing submissions
+        const submissionCount = await Submission.count({
+            where: { assessment_id: question.assessment_id }
+        });
+        if (submissionCount > 0) {
+            throw new ConflictError("Không thể xóa câu hỏi khi đã có học sinh làm bài hoặc nộp bài.");
+        }
 
         await sequelize.transaction(async (t) => {
             await QuizOption.destroy({ where: { question_id: questionId }, transaction: t });
@@ -245,6 +269,14 @@ Số lượng câu hỏi theo yêu cầu, nếu không nêu rõ thì tạo 5 câ
     bulkSaveQuestions: async (quizId, questions) => {
         const assessment = await Assessment.findByPk(quizId);
         if (!assessment) throw new NotFoundError("Quiz không tồn tại.");
+
+        // Check for existing submissions
+        const submissionCount = await Submission.count({
+            where: { assessment_id: quizId }
+        });
+        if (submissionCount > 0) {
+            throw new ConflictError("Không thể lưu bộ câu hỏi khi đã có học sinh làm bài hoặc nộp bài.");
+        }
 
         const maxOrder = await QuizQuestion.max("display_order", { where: { assessment_id: quizId } });
         let order = (maxOrder || 0);
