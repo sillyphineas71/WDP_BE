@@ -7,8 +7,9 @@ export const adminController = {
     // Course Handlers
     getCourses: async (req, res, next) => {
         try {
-            const data = await adminService.getAllCourses();
-            res.status(200).json({ success: true, data });
+            const { page, limit, q, status } = req.query;
+            const data = await adminService.getAllCourses({ page, limit, q, status });
+            res.status(200).json({ success: true, ...data });
         } catch (error) { next(error); }
     },
     addCourse: async (req, res, next) => {
@@ -47,8 +48,9 @@ export const adminController = {
     // Class Handlers
     getClasses: async (req, res, next) => {
         try {
-            const data = await adminService.getAllClasses();
-            res.status(200).json({ success: true, data });
+            const { page, limit, q, statusFilter } = req.query;
+            const data = await adminService.getAllClasses({ page, limit, q, statusFilter });
+            res.status(200).json({ success: true, ...data });
         } catch (error) { next(error); }
     },
     getClassById: async (req, res, next) => {

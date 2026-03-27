@@ -13,12 +13,35 @@ import { ConflictError, NotFoundError } from "../errors/AppError.js";
 
 export const adminService = {
     // --- UC_ADM_10: QUẢN LÝ KHÓA HỌC ---
-    getAllCourses: async () => {
-        const allCourses = await Course.findAll({
-            order: [["created_at", "DESC"]]
+    getAllCourses: async ({ page = 1, limit = 20, q = "", status = "all" }) => {
+        const offset = (page - 1) * limit;
+        const where = { is_deleted: false };
+        
+        if (q) {
+            where[Sequelize.Op.or] = [
+                { name: { [Sequelize.Op.iLike]: `%${q}%` } },
+                { code: { [Sequelize.Op.iLike]: `%${q}%` } }
+            ];
+        }
+        
+        if (status && status !== "all") {
+            where.status = status;
+        }
+
+        const { count, rows } = await Course.findAndCountAll({
+            where,
+            order: [["created_at", "DESC"]],
+            limit: parseInt(limit),
+            offset: parseInt(offset)
         });
-        // Lọc trong JS để đảm bảo xử lý được cả null, undefined, false
-        return allCourses.filter(c => !c.is_deleted);
+
+        return {
+            data: rows,
+            total: count,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            totalPages: Math.ceil(count / limit)
+        };
     },
 
     createCourse: async (data) => {
@@ -153,15 +176,52 @@ export const adminService = {
     },
 
     // --- UC_ADM_11: QUẢN LÝ LỚP HỌC ---
-    getAllClasses: async () => {
-        return await Class.findAll({
+    getAllClasses: async ({ page = 1, limit = 20, q = "", statusFilter = "all" }) => {
+        const offset = (page - 1) * limit;
+        const where = {};
+        
+        if (q) {
+            where[Sequelize.Op.or] = [
+                { name: { [Sequelize.Op.iLike]: `%${q}%` } },
+                { '$course.name$': { [Sequelize.Op.iLike]: `%${q}%` } }
+            ];
+        }
+        
+        if (statusFilter && statusFilter !== "all") {
+            where.status = statusFilter;
+        }
+
+        const { count, rows } = await Class.findAndCountAll({
+            where,
+            attributes: {
+                include: [
+                    [
+                        Sequelize.literal(`(
+                            SELECT COUNT(*)
+                            FROM enrollments AS e
+                            WHERE e.class_id = "Class".id
+                        )`),
+                        'enrollmentCount'
+                    ]
+                ]
+            },
             include: [
                 { model: Course, as: "course", attributes: ["name", "code"] },
-                { model: User, as: "teacher", attributes: ["full_name"] },
-                { model: Enrollment, as: "enrollments", attributes: ["id"] }
+                { model: User, as: "teacher", attributes: ["full_name"] }
             ],
-            order: [["created_at", "DESC"]]
+            order: [["created_at", "DESC"]],
+            limit: parseInt(limit),
+            offset: parseInt(offset),
+            distinct: true
         });
+
+        return {
+            data: rows,
+            total: count,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            totalPages: Math.ceil(count / limit)
+        };
     },
 
     getClassDetail: async (id) => {
@@ -518,54 +578,121 @@ export const adminService = {
         // All checks passed, assign the teacher
         return await cls.update({ teacher_id: teacherId });
     },
+    
+    // --- HELPERS ---
+    checkSessionConflict: async (sessionData, excludeSessionIds = []) => {
+        const { start_time, end_time, room, teacher_id } = sessionData;
+        
+        const where = {
+            status: { [Sequelize.Op.ne]: 'cancelled' },
+            id: { [Sequelize.Op.notIn]: excludeSessionIds },
+            [Sequelize.Op.and]: [
+                {
+                    start_time: { [Sequelize.Op.lt]: end_time },
+                    end_time: { [Sequelize.Op.gt]: start_time }
+                }
+            ],
+            [Sequelize.Op.or]: []
+        };
+
+        if (room && room !== "N/A") {
+            where[Sequelize.Op.or].push({ room });
+        }
+        if (teacher_id) {
+            where[Sequelize.Op.or].push({ teacher_id });
+        }
+
+        if (where[Sequelize.Op.or].length === 0) return null;
+
+        const conflict = await ClassSession.findOne({
+            where,
+            include: [{ model: Class, as: 'class', attributes: ['name'] }]
+        });
+
+        if (conflict) {
+            const type = conflict.room === room ? `Phòng ${room}` : `Giáo viên`;
+            const dateStr = new Date(conflict.start_time).toLocaleDateString("vi-VN");
+            throw new ConflictError(`${type} đã bị trùng lịch tại lớp ${conflict.class?.name} vào ngày ${dateStr}.`);
+        }
+    },
 
     // --- ADD SESSION ---
     addSession: async (classId, sessionData) => {
-        const { day_of_week, start_time, end_time, room, teacher_id } = sessionData;
+        const { day_of_week, start_time, end_time, room, teacher_id, specific_date } = sessionData;
         const cls = await Class.findByPk(classId);
         if (!cls) throw new NotFoundError("Lớp học không tồn tại");
 
-        if (!day_of_week || !start_time || !end_time) {
-            throw new ConflictError("Vui lòng nhập đầy đủ thông tin: Thứ, Giờ bắt đầu, Giờ kết thúc");
+        if (!start_time || !end_time) {
+            throw new ConflictError("Vui lòng nhập đầy đủ Giờ bắt đầu, Giờ kết thúc");
         }
-
-        const dayMap = {
-            "Sunday": 0, "Monday": 1, "Tuesday": 2, "Wednesday": 3, "Thursday": 4, "Friday": 5, "Saturday": 6,
-            "Chủ Nhật": 0, "Thứ Hai": 1, "Thứ Ba": 2, "Thứ Tư": 3, "Thứ Năm": 4, "Thứ Sáu": 5, "Thứ Bảy": 6,
-            "CN": 0, "T2": 1, "T3": 2, "T4": 3, "T5": 4, "T6": 5, "T7": 6
-        };
-        const targetDay = dayMap[day_of_week];
-
-        if (targetDay === undefined) {
-            throw new ConflictError(`Thứ '${day_of_week}' không hợp lệ. Vui lòng chọn một ngày trong tuần.`);
-        }
-
-        let currentDate = new Date(cls.start_date + "T00:00:00");
-        const endDate = new Date(cls.end_date + "T00:00:00");
 
         const sessionsToCreate = [];
 
-        while (currentDate <= endDate) {
-            if (currentDate.getDay() === targetDay) {
-                // Formatting date string locally (YYYY-MM-DD)
-                const Y = currentDate.getFullYear();
-                const M = String(currentDate.getMonth() + 1).padStart(2, '0');
-                const D = String(currentDate.getDate()).padStart(2, '0');
-                const dateStr = `${Y}-${M}-${D}`;
+        // CASE 1: Specific single date (New priority)
+        if (specific_date) {
+            const sessionStart = new Date(`${specific_date}T${start_time}:00+07:00`);
+            const sessionEnd = new Date(`${specific_date}T${end_time}:00+07:00`);
 
-                const sessionStart = new Date(`${dateStr}T${start_time}:00+07:00`);
-                const sessionEnd = new Date(`${dateStr}T${end_time}:00+07:00`);
+            // Validate conflict
+            await adminService.checkSessionConflict({
+                start_time: sessionStart,
+                end_time: sessionEnd,
+                room,
+                teacher_id
+            });
 
-                sessionsToCreate.push({
-                    class_id: classId,
-                    start_time: sessionStart,
-                    end_time: sessionEnd,
-                    room: room || "",
-                    topic: `Class session`,
-                    status: "scheduled"
-                });
+            sessionsToCreate.push({
+                class_id: classId,
+                teacher_id: teacher_id || null,
+                room: room || "N/A",
+                start_time: sessionStart,
+                end_time: sessionEnd,
+                status: 'scheduled'
+            });
+        } 
+        // CASE 2: Day of Week recurring (Legacy logic)
+        else if (day_of_week) {
+            const dayMap = {
+                "Sunday": 0, "Monday": 1, "Tuesday": 2, "Wednesday": 3, "Thursday": 4, "Friday": 5, "Saturday": 6,
+                "Chủ Nhật": 0, "Thứ Hai": 1, "Thứ Ba": 2, "Thứ Tư": 3, "Thứ Năm": 4, "Thứ Sáu": 5, "Thứ Bảy": 6
+            };
+            const targetDay = dayMap[day_of_week];
+            if (targetDay === undefined) throw new ConflictError("Ngày trong tuần không hợp lệ");
+
+            let currentDate = new Date(cls.start_date + "T00:00:00");
+            const endDate = new Date(cls.end_date + "T00:00:00");
+
+            while (currentDate <= endDate) {
+                if (currentDate.getDay() === targetDay) {
+                    const Y = currentDate.getFullYear();
+                    const M = String(currentDate.getMonth() + 1).padStart(2, '0');
+                    const D = String(currentDate.getDate()).padStart(2, '0');
+                    const dateStr = `${Y}-${M}-${D}`;
+
+                    const sessionStart = new Date(`${dateStr}T${start_time}:00+07:00`);
+                    const sessionEnd = new Date(`${dateStr}T${end_time}:00+07:00`);
+
+                    // Validate conflict for each session in recurrence
+                    await adminService.checkSessionConflict({
+                        start_time: sessionStart,
+                        end_time: sessionEnd,
+                        room,
+                        teacher_id
+                    });
+
+                    sessionsToCreate.push({
+                        class_id: classId,
+                        teacher_id: teacher_id || null,
+                        room: room || "N/A",
+                        start_time: sessionStart,
+                        end_time: sessionEnd,
+                        status: 'scheduled'
+                    });
+                }
+                currentDate.setDate(currentDate.getDate() + 1);
             }
-            currentDate.setDate(currentDate.getDate() + 1);
+        } else {
+            throw new ConflictError("Vui lòng chọn ngày học hoặc thứ trong tuần");
         }
 
         if (sessionsToCreate.length === 0) {
@@ -600,7 +727,7 @@ export const adminService = {
 
     // --- EDIT SESSIONS (GROUP) ---
     editSessions: async (classId, sessionData) => {
-        const { sessionIds, day_of_week, start_time, end_time, room, teacher_id } = sessionData;
+        const { sessionIds, day_of_week, start_time, end_time, room, teacher_id, specific_date } = sessionData;
         if (!sessionIds || sessionIds.length === 0) {
             throw new ConflictError("Vui lòng cung cấp danh sách buổi học cần sửa");
         }
@@ -608,35 +735,49 @@ export const adminService = {
         const cls = await Class.findByPk(classId);
         if (!cls) throw new NotFoundError("Lớp học không tồn tại");
 
-        const dayMap = {
-            "Sunday": 0, "Monday": 1, "Tuesday": 2, "Wednesday": 3, "Thursday": 4, "Friday": 5, "Saturday": 6,
-            "Chủ Nhật": 0, "Thứ Hai": 1, "Thứ Ba": 2, "Thứ Tư": 3, "Thứ Năm": 4, "Thứ Sáu": 5, "Thứ Bảy": 6,
-            "CN": 0, "T2": 1, "T3": 2, "T4": 3, "T5": 4, "T6": 5, "T7": 6
-        };
-        const targetDay = dayMap[day_of_week];
+        // If not using specific_date, we need to validate day_of_week like before
+        if (!specific_date && day_of_week) {
+            const dayMap = {
+                "Sunday": 0, "Monday": 1, "Tuesday": 2, "Wednesday": 3, "Thursday": 4, "Friday": 5, "Saturday": 6,
+                "Chủ Nhật": 0, "Thứ Hai": 1, "Thứ Ba": 2, "Thứ Tư": 3, "Thứ Năm": 4, "Thứ Sáu": 5, "Thứ Bảy": 6,
+                "CN": 0, "T2": 1, "T3": 2, "T4": 3, "T5": 4, "T6": 5, "T7": 6
+            };
+            const targetDay = dayMap[day_of_week];
+            
+            let currentDate = new Date(cls.start_date + "T00:00:00");
+            const endDate = new Date(cls.end_date + "T00:00:00");
+            let sampleCount = 0;
+            while (currentDate <= endDate) {
+                if (currentDate.getDay() === targetDay) sampleCount++;
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
 
-        let currentDate = new Date(cls.start_date + "T00:00:00");
-        const endDate = new Date(cls.end_date + "T00:00:00");
-        let sampleCount = 0;
-        while (currentDate <= endDate) {
-            if (currentDate.getDay() === targetDay) sampleCount++;
-            currentDate.setDate(currentDate.getDate() + 1);
+            if (sampleCount === 0) {
+                throw new ConflictError(`Lớp học (${cls.start_date} - ${cls.end_date}) không chứa ngày ${day_of_week} nào.`);
+            }
         }
 
-        if (sampleCount === 0) {
-            throw new ConflictError(`Lớp học (${cls.start_date} - ${cls.end_date}) không chứa ngày ${day_of_week} nào. Vui lòng kiểm tra lại cấu hình Ngày bắt đầu/kết thúc của lớp.`);
-        }
-
+        // Delete old sessions first
+        // We MUST NOT pass excludeSessionIds here because we delete them before re-creating
         await adminService.deleteSessions(classId, sessionIds);
 
         // Regenerate completely new sessions for the updated schedule
-        return await adminService.addSession(classId, { day_of_week, start_time, end_time, room, teacher_id });
+        return await adminService.addSession(classId, { day_of_week, start_time, end_time, room, teacher_id, specific_date });
     },
 
     updateSession: async (classId, sessionId, data) => {
         const { start_time, end_time, room, teacher_id } = data;
         const session = await ClassSession.findByPk(sessionId);
         if (!session) throw new NotFoundError("Buổi học không tồn tại");
+
+        if (start_time || end_time || room || teacher_id) {
+            await adminService.checkSessionConflict({
+                start_time: start_time || session.start_time,
+                end_time: end_time || session.end_time,
+                room: room || session.room,
+                teacher_id: teacher_id !== undefined ? teacher_id : session.teacher_id
+            }, [sessionId]);
+        }
         
         await session.update({
             start_time: start_time || session.start_time,
@@ -1021,14 +1162,14 @@ export const adminService = {
         const isValidDate = (d) => d && d !== 'undefined' && d !== '';
         
         if (dateRange === 'Custom Range') {
-            if (isValidDate(startDate)) whereClause += ` AND s.submitted_at >= '${startDate} 00:00:00'`;
-            if (isValidDate(endDate)) whereClause += ` AND s.submitted_at <= '${endDate} 23:59:59'`;
+            if (isValidDate(startDate)) whereClause += ` AND (s.submitted_at >= '${startDate} 00:00:00' OR g.graded_at >= '${startDate} 00:00:00')`;
+            if (isValidDate(endDate)) whereClause += ` AND (s.submitted_at <= '${endDate} 23:59:59' OR g.graded_at <= '${endDate} 23:59:59')`;
         } else if (dateRange === 'This Week') {
-            whereClause += ` AND s.submitted_at >= CURRENT_DATE - INTERVAL '7 days'`;
+            whereClause += ` AND (s.submitted_at >= CURRENT_DATE - INTERVAL '7 days' OR g.graded_at >= CURRENT_DATE - INTERVAL '7 days')`;
         } else if (dateRange === 'This Month') {
-            whereClause += ` AND s.submitted_at >= date_trunc('month', CURRENT_DATE)`;
+            whereClause += ` AND (s.submitted_at >= date_trunc('month', CURRENT_DATE) OR g.graded_at >= date_trunc('month', CURRENT_DATE))`;
         } else if (dateRange === 'This Semester') {
-            whereClause += ` AND s.submitted_at >= CURRENT_DATE - INTERVAL '4 months'`;
+            whereClause += ` AND (s.submitted_at >= CURRENT_DATE - INTERVAL '4 months' OR g.graded_at >= CURRENT_DATE - INTERVAL '4 months')`;
         }
 
         let A = 0, B = 0, C = 0, D = 0, F = 0;
@@ -1099,14 +1240,14 @@ export const adminService = {
 
             // Add date filters to avg calculation
             if (dateRange === 'Custom Range') {
-                if (isValidDate(startDate)) sqlWhereAvg += ` AND s.submitted_at >= '${startDate} 00:00:00'`;
-                if (isValidDate(endDate)) sqlWhereAvg += ` AND s.submitted_at <= '${endDate} 23:59:59'`;
+                if (isValidDate(startDate)) sqlWhereAvg += ` AND (s.submitted_at >= '${startDate} 00:00:00' OR g.graded_at >= '${startDate} 00:00:00')`;
+                if (isValidDate(endDate)) sqlWhereAvg += ` AND (s.submitted_at <= '${endDate} 23:59:59' OR g.graded_at <= '${endDate} 23:59:59')`;
             } else if (dateRange === 'This Week') {
-                sqlWhereAvg += ` AND s.submitted_at >= CURRENT_DATE - INTERVAL '7 days'`;
+                sqlWhereAvg += ` AND (s.submitted_at >= CURRENT_DATE - INTERVAL '7 days' OR g.graded_at >= CURRENT_DATE - INTERVAL '7 days')`;
             } else if (dateRange === 'This Month') {
-                sqlWhereAvg += ` AND s.submitted_at >= date_trunc('month', CURRENT_DATE)`;
+                sqlWhereAvg += ` AND (s.submitted_at >= date_trunc('month', CURRENT_DATE) OR g.graded_at >= date_trunc('month', CURRENT_DATE))`;
             } else if (dateRange === 'This Semester') {
-                sqlWhereAvg += ` AND s.submitted_at >= CURRENT_DATE - INTERVAL '4 months'`;
+                sqlWhereAvg += ` AND (s.submitted_at >= CURRENT_DATE - INTERVAL '4 months' OR g.graded_at >= CURRENT_DATE - INTERVAL '4 months')`;
             }
 
             const [avgRows] = await Grade.sequelize.query(`
@@ -1150,6 +1291,9 @@ export const adminService = {
                     a.id as assessment_id,
                     a.type as type,
                     a.title as quiz_name,
+                    a.settings_json as assessment_settings,
+                    COALESCE(s.submitted_at, g.graded_at) as submitted_at,
+                    g.graded_at as graded_at,
                     COALESCE(c2.code, 'N/A') as course_code,
                     g.final_score as score,
                     CASE 
@@ -1170,7 +1314,13 @@ export const adminService = {
             `);
             console.log('[Reports] detailRows count:', detailRows.length);
             if (detailRows.length > 0) {
-                console.log('[Reports] Sample row keys:', Object.keys(detailRows[0]).join(', '));
+                console.log('[Reports Server Log] Sample Row Keys:', Object.keys(detailRows[0]));
+                console.log('[Reports Server Log] Sample row values:', {
+                    student_id: detailRows[0].student_id,
+                    submitted_at: detailRows[0].submitted_at,
+                    graded_at: detailRows[0].graded_at,
+                    score: detailRows[0].score
+                });
             }
             detailedData = detailRows;
         } catch (e) {
