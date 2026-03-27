@@ -7,7 +7,7 @@
     "dev": "node index.js",
     "start": "nodemon index.js",
     "worker": "node src/services/startNotificationWorker.js",
-    "test": "jest"
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand"
   },
   "keywords": [],
   "author": "",
