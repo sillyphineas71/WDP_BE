@@ -7,8 +7,9 @@ export const adminController = {
     // Course Handlers
     getCourses: async (req, res, next) => {
         try {
-            const data = await adminService.getAllCourses();
-            res.status(200).json({ success: true, data });
+            const { page, limit, q, status } = req.query;
+            const data = await adminService.getAllCourses({ page, limit, q, status });
+            res.status(200).json({ success: true, ...data });
         } catch (error) { next(error); }
     },
     addCourse: async (req, res, next) => {
@@ -47,8 +48,9 @@ export const adminController = {
     // Class Handlers
     getClasses: async (req, res, next) => {
         try {
-            const data = await adminService.getAllClasses();
-            res.status(200).json({ success: true, data });
+            const { page, limit, q, statusFilter } = req.query;
+            const data = await adminService.getAllClasses({ page, limit, q, statusFilter });
+            res.status(200).json({ success: true, ...data });
         } catch (error) { next(error); }
     },
     getClassById: async (req, res, next) => {
@@ -196,9 +198,9 @@ export const adminController = {
     },
     getReportData: async (req, res, next) => {
         try {
-            const { semester, course, dateRange, class_id } = req.query;
-            const data = await adminService.getReportData(semester, course, dateRange, class_id);
-            res.status(200).json({ success: true, data });
+            const { semester, course, dateRange, class_id, startDate, endDate } = req.query;
+            const data = await adminService.getReportData(semester, course, dateRange, class_id, startDate, endDate);
+            res.status(200).json({ success: true, data, heartbeat: 'v1_fixed' });
         } catch (error) { next(error); }
     },
     getReportFilters: async (req, res, next) => {
@@ -209,15 +211,15 @@ export const adminController = {
     },
     getTeacherActivity: async (req, res, next) => {
         try {
-            const { semester, course, dateRange, class_id } = req.query;
-            const data = await adminService.getTeacherActivity(semester, course, dateRange, class_id);
+            const { semester, course, dateRange, class_id, startDate, endDate } = req.query;
+            const data = await adminService.getTeacherActivity(semester, course, dateRange, class_id, startDate, endDate);
             res.status(200).json({ success: true, data });
         } catch (error) { next(error); }
     },
     exportReportPDF: async (req, res, next) => {
         try {
-            const { semester, course, dateRange, class_id, className, activeTab } = req.query;
-            console.log('PDF Export Request - activeTab:', activeTab, 'Filters:', { semester, course, dateRange, class_id, className });
+            const { semester, course, dateRange, class_id, className, activeTab, startDate, endDate } = req.query;
+            console.log('PDF Export Request - activeTab:', activeTab, 'Filters:', { semester, course, dateRange, class_id, className, startDate, endDate });
             
             // Set headers EARLY to prevent CORS blocking by download managers
             res.setHeader('Access-Control-Allow-Origin', '*');
@@ -227,11 +229,11 @@ export const adminController = {
 
             let teacherActivityData = null;
             if (activeTab === 'teacher') {
-                teacherActivityData = await adminService.getTeacherActivity(semester, course, dateRange, class_id);
+                teacherActivityData = await adminService.getTeacherActivity(semester, course, dateRange, class_id, startDate, endDate);
             }
 
-            const reportData = await adminService.getReportData(semester, course, dateRange, class_id);
-            const doc = await reportExportService.generateReportPDF(reportData, { semester, course, dateRange, className, activeTab }, teacherActivityData);
+            const reportData = await adminService.getReportData(semester, course, dateRange, class_id, startDate, endDate);
+            const doc = await reportExportService.generateReportPDF(reportData, { semester, course, dateRange, className, activeTab, startDate, endDate }, teacherActivityData);
             
             doc.pipe(res);
             doc.end();
