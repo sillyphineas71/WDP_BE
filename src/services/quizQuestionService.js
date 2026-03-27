@@ -186,7 +186,7 @@ export const quizQuestionService = {
 
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({
-            model: "gemini-1.5-flash", // Use 1.5-flash for better multimodal support
+            model: "gemini-2.5-flash-lite", // Use 1.5-flash for better multimodal support
             generationConfig: { responseMimeType: "application/json" },
         });
 
