@@ -599,14 +599,19 @@ export const adminService = {
             where[Sequelize.Op.or].push({ room });
         }
         if (teacher_id) {
-            where[Sequelize.Op.or].push({ teacher_id });
+            where[Sequelize.Op.or].push({ '$class.teacher_id$': teacher_id });
         }
 
         if (where[Sequelize.Op.or].length === 0) return null;
 
         const conflict = await ClassSession.findOne({
             where,
-            include: [{ model: Class, as: 'class', attributes: ['name'] }]
+            include: [{ 
+                model: Class, 
+                as: 'class', 
+                attributes: ['name', 'teacher_id'],
+                required: true 
+            }]
         });
 
         if (conflict) {
@@ -643,7 +648,6 @@ export const adminService = {
 
             sessionsToCreate.push({
                 class_id: classId,
-                teacher_id: teacher_id || null,
                 room: room || "N/A",
                 start_time: sessionStart,
                 end_time: sessionEnd,
@@ -682,7 +686,6 @@ export const adminService = {
 
                     sessionsToCreate.push({
                         class_id: classId,
-                        teacher_id: teacher_id || null,
                         room: room || "N/A",
                         start_time: sessionStart,
                         end_time: sessionEnd,
@@ -783,7 +786,6 @@ export const adminService = {
             start_time: start_time || session.start_time,
             end_time: end_time || session.end_time,
             room: room || session.room,
-            teacher_id: teacher_id !== undefined ? (teacher_id || null) : session.teacher_id
         });
         return session;
     },
