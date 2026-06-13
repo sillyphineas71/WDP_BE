@@ -82,7 +82,7 @@ export const loginUser = async (userData) => {
     token,
     user: {
       ...formatUserResponse(user),
-      role: user.role.code, 
+      role: user.role.code,
     },
   };
 };
@@ -113,7 +113,8 @@ export const loginWithGoogle = async (email) => {
     token,
     user: {
       ...formatUserResponse(user),
-      role: user.role.code, 
+      role: user.role.code,
+      must_change_password: false,
     },
   };
 };
